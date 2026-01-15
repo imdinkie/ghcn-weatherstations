@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Query
 from pydantic import BaseModel
+import psycopg
 
 app = FastAPI(title="FastAPI Beispiele")
 
@@ -39,7 +40,40 @@ class StationOut(BaseModel):
     lat: float
     lon: float
 
+# 5) Database Integration: /station_list
+@app.get("/station_list", response_model=StationOut)
+def station_list():
+    with psycopg.connect(
+        dbname="weatherstations", user="user", password="example", host="localhost", port=5432
+    ) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM stations")
+            rows = cur.fetchone()
+            return StationOut(id=rows[0], name=rows[1], lat=rows[2], lon=rows[3])
 
-@app.get("/station-demo", response_model=StationOut)
-def station_demo():
-    return StationOut(id="DEMO001", name="Demo Station", lat=48.062, lon=8.493)
+
+def initialize_db():
+    with psycopg.connect(
+        dbname="weatherstations", user="user", password="example", host="localhost", port=5432) as conn:
+
+        with conn.cursor() as cur:
+
+            cur.execute("""
+                        CREATE TABLE IF NOT EXISTS stations(
+                            id VARCHAR PRIMARY KEY,
+                            name VARCHAR,
+                            lat FLOAT,
+                            lon FLOAT
+                        )
+                        """)
+            
+            cur.execute("""
+                        INSERT INTO stations (id, name, lat, lon) VALUES
+                        ('DEMO001', 'Demo Station', 48.062, 8.493)
+                        """)
+            
+            cur.execute("SELECT * FROM stations")
+            rows = cur.fetchall()
+            print(rows)
+
+            conn.commit()

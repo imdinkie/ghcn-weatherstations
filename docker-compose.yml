@@ -11,6 +11,9 @@ services:
       POSTGRES_USER: user
       POSTGRES_DB: weatherstations
       POSTGRES_PASSWORD: example
+    ports: 
+      - 5432:5432
+    # ports opened for local development only. todo: close these ports later when fully containerized. 
 
   adminer:
     image: adminer
