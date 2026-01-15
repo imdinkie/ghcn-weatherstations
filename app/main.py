@@ -1,79 +1,145 @@
-from fastapi import FastAPI, Query
-from pydantic import BaseModel
-import psycopg
+import os
 
-app = FastAPI(title="FastAPI Beispiele")
+import psycopg
+from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel
+
+app = FastAPI(title="GHCN Weatherstations (Learning API)")
 
 
 @app.get("/")
 def root():
-    return {"message": "Hello, World!"}
+    return {"message": "API is running. Open /docs for Swagger UI."}
 
 
-# 1) Query-Parameter: /add?a=1&b=2
-@app.get("/add")
-def add(a: float, b: float):
-    return {"result": a + b}
+@app.get("/health")
+def health():
+    return {"ok": True}
 
 
-# 2) Path-Parameter: /station/ABC123
-@app.get("/station/{station_id}")
-def station(station_id: str):
-    return {"station_id": station_id}
-
-
-# 3) Validation (Query): /search?lat=48.1&lon=8.4&radius_km=50&limit=20
-@app.get("/search")
-def search(
-    lat: float = Query(..., ge=-90, le=90),
-    lon: float = Query(..., ge=-180, le=180),
-    radius_km: float = Query(50, gt=0, le=2000),
-    limit: int = Query(20, gt=0, le=200),
-):
-    return {"lat": lat, "lon": lon, "radius_km": radius_km, "limit": limit}
-
-
-# 4) Response-Model (Pydantic): /station-demo
+# Pydantic-Model:
+# - definiert, wie eine Station "aussieht" (Felder + Typen)
+# - FastAPI nutzt das für Validierung + automatische Doku in /docs
 class StationOut(BaseModel):
     id: str
     name: str
     lat: float
     lon: float
 
-# 5) Database Integration: /station_list
-@app.get("/station_list", response_model=StationOut)
-def station_list():
-    with psycopg.connect(
-        dbname="weatherstations", user="user", password="example", host="localhost", port=5432
-    ) as conn:
+
+def connect():
+    # Wir lesen die DB-Verbindung aus der Umgebung (ENV).
+    # Wichtig: Python liest .env NICHT automatisch.
+    # Du musst z.B. `fastapi dev` so starten:
+    #   set -a; source .env; set +a; fastapi dev app/main.py
+    dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        raise RuntimeError("DATABASE_URL environment variable not set.")
+    return psycopg.connect(dsn)
+
+
+def ensure_schema() -> None:
+    # Für den Lern-/Dev-Stand legen wir das Schema beim Start an.
+    # Das ist "idempotent": man kann es beliebig oft ausführen.
+    with connect() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT * FROM stations")
-            rows = cur.fetchone()
-            return StationOut(id=rows[0], name=rows[1], lat=rows[2], lon=rows[3])
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS stations (
+                  id TEXT PRIMARY KEY,
+                  name TEXT NOT NULL,
+                  lat DOUBLE PRECISION NOT NULL,
+                  lon DOUBLE PRECISION NOT NULL
+                )
+                """
+            )
+        conn.commit()
 
 
-def initialize_db():
-    with psycopg.connect(
-        dbname="weatherstations", user="user", password="example", host="localhost", port=5432) as conn:
+@app.on_event("startup")
+def _startup():
+    ensure_schema()
 
+
+@app.post("/dev/seed")
+def dev_seed():
+    # Dev-Endpoint: legt eine Demo-Station an (nur einmal, dank ON CONFLICT).
+    ensure_schema()
+    with connect() as conn:
         with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO stations (id, name, lat, lon)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (id) DO NOTHING
+                """,
+                ("DEMO001", "Demo Station", 48.062, 8.493),
+            )
+        conn.commit()
+    return {"seeded": True}
 
-            cur.execute("""
-                        CREATE TABLE IF NOT EXISTS stations(
-                            id VARCHAR PRIMARY KEY,
-                            name VARCHAR,
-                            lat FLOAT,
-                            lon FLOAT
-                        )
-                        """)
-            
-            cur.execute("""
-                        INSERT INTO stations (id, name, lat, lon) VALUES
-                        ('DEMO001', 'Demo Station', 48.062, 8.493)
-                        """)
-            
-            cur.execute("SELECT * FROM stations")
+
+@app.get("/stations", response_model=list[StationOut])
+def list_stations(
+    # Query-Parameter (optional) zum Begrenzen der Ergebnisanzahl.
+    # limit=20 ist Standard; FastAPI validiert automatisch (gt/le).
+    limit: int = Query(20, gt=0, le=200),
+):
+    # WICHTIG: Liste zurückgeben
+    # -------------------------
+    # response_model=list[StationOut] bedeutet:
+    # - Die Response ist eine JSON-LISTE.
+    # - Jeder Eintrag in der Liste ist ein StationOut-Objekt (id/name/lat/lon).
+    #
+    # JSON sieht dann z.B. so aus:
+    # [
+    #   {"id":"DEMO001","name":"Demo Station","lat":48.062,"lon":8.493},
+    #   {"id":"...","name":"...","lat":...,"lon":...}
+    # ]
+    with connect() as conn:
+        with conn.cursor() as cur:
+            # WICHTIG: Keine f-Strings für SQL mit Parametern verwenden!
+            # Sonst baust du dir SQL-Injection-Bugs.
+            # Stattdessen nutzt du Platzhalter (%s) und übergibst die Werte als Tuple.
+            cur.execute(
+                """
+                SELECT id, name, lat, lon
+                FROM stations
+                ORDER BY id
+                LIMIT %s
+                """,
+                (limit,),
+            )
             rows = cur.fetchall()
-            print(rows)
 
-            conn.commit()
+    # `rows` ist eine Python-Liste von Tupeln:
+    # z.B. [("DEMO001", "Demo Station", 48.062, 8.493), (...), ...]
+    #
+    # Wir wandeln jedes Tupel in StationOut um und sammeln alles in einer Liste.
+    stations: list[StationOut] = []
+    for row in rows:
+        stations.append(StationOut(id=row[0], name=row[1], lat=row[2], lon=row[3]))
+
+    return stations
+
+
+@app.get("/stations/{station_id}", response_model=StationOut)
+def get_station(station_id: str):
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, name, lat, lon
+                FROM stations
+                WHERE id = %s
+                """,
+                (station_id,),
+            )
+            row = cur.fetchone()
+
+    # fetchone() liefert None, wenn es keinen Treffer gibt.
+    if row is None:
+        raise HTTPException(status_code=404, detail="Station not found")
+
+    return StationOut(id=row[0], name=row[1], lat=row[2], lon=row[3])
+
