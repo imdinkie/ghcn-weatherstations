@@ -39,18 +39,29 @@ def connect():
 
 
 def ensure_schema() -> None:
-    # Für den Lern-/Dev-Stand legen wir das Schema beim Start an.
-    # Das ist "idempotent": man kann es beliebig oft ausführen.
+    # Datenschema anlegen. 
     with connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS stations (
                   id TEXT PRIMARY KEY,
-                  name TEXT NOT NULL,
                   lat DOUBLE PRECISION NOT NULL,
-                  lon DOUBLE PRECISION NOT NULL
-                )
+                  lon DOUBLE PRECISION NOT NULL,
+                  elev_m DOUBLE PRECISION NOT NULL,
+                  state TEXT,
+                  name TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS station_coverage (
+                  id TEXT FOREIGN KEY NOT NULL,
+                  lat DOUBLE PRECISION NOT NULL,
+                  lon DOUBLE PRECISION NOT NULL,
+                  tmin_first_year INTEGER,
+                  tmin_last_year INTEGER,
+                  tmax_first_year INTEGER,
+                  tmax_last_year INTEGER
+                );
                 """
             )
         conn.commit()
