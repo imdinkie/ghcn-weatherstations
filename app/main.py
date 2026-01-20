@@ -117,6 +117,21 @@ def get_station(station_id: str):
 
 
 class StationSearchOut(StationOut):
+    # Warum eine extra Klasse?
+    # ------------------------
+    # In der Stationssuche wollen wir *mehr* zurückgeben als nur die Station selbst.
+    #
+    # StationOut (Basisklasse) beschreibt nur die Station-Stammdaten:
+    #   id, name, lat, lon, elev_m, state
+    #
+    # Für Suchergebnisse brauchen wir zusätzlich z.B.:
+    #   - dist_km: Entfernung vom eingegebenen Standpunkt
+    #   - Coverage-Infos: damit Start/Endjahr-Filter nachvollziehbar sind
+    #
+    # Pydantic-Model-Inheritance (Vererbung) bedeutet hier:
+    #   StationSearchOut = StationOut + zusätzliche Felder
+    # -> In /docs siehst du dadurch ein sauberes Schema für Suchergebnisse.
+
     # Entfernung zum Standpunkt (in km) – damit du die "nächsten Stationen" sortieren kannst.
     dist_km: float
 
@@ -128,33 +143,90 @@ class StationSearchOut(StationOut):
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    # Great-circle distance (Haversine). Genau genug für unseren Zweck.
+    # Great-circle distance (Haversine)
+    # ---------------------------------
+    # Problem: Wir wollen die Entfernung zweier Punkte auf der Erdoberfläche.
+    # Die Erde ist (vereinfacht) eine Kugel. Die kürzeste Strecke auf einer Kugel
+    # ist ein "Großkreis" (great circle).
+    #
+    # Die Haversine-Formel liefert genau diese Großkreisentfernung.
+    #
+    # Eingabe:
+    #   lat1, lon1: Standpunkt (User-Eingabe)
+    #   lat2, lon2: Station
+    #
+    # Ausgabe:
+    #   Distanz in Kilometern (km)
+    #
+    # Warum Haversine?
+    #   - stabil auch für kleine Distanzen
+    #   - gut genug für "Stationen im Radius X km" (Semesterprojekt)
     import math
 
+    # Erdradius in km (Mittelwert). Je nach Modell schwankt der "echte" Radius leicht.
     r = 6371.0
+
+    # WICHTIG: trigonometrische Funktionen erwarten Radiant, nicht Grad.
+    # math.radians(x) macht Grad -> Radiant.
     phi1 = math.radians(lat1)
     phi2 = math.radians(lat2)
+
+    # Differenzen der Winkel (in Radiant)
     dphi = math.radians(lat2 - lat1)
     dlambda = math.radians(lon2 - lon1)
 
+    # Haversine:
+    # a ist ein Hilfswert zwischen 0 und 1
+    # (0 = gleiche Punkte, 1 = antipodale Punkte)
     a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+
+    # c ist der Zentralwinkel (Winkel im Erdmittelpunkt) zwischen den beiden Punkten
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    # Distanz = Radius * Winkel
     return r * c
 
 
 def _bounding_box(lat: float, lon: float, radius_km: float) -> tuple[float, float, float, float]:
-    # Damit die DB nicht "alle Stationen weltweit" scannen muss, filtern wir zuerst grob:
-    # Wir nehmen ein Rechteck (Bounding Box) um den Punkt herum.
-    # Danach filtern wir in Python mit Haversine nochmal exakt auf den Kreis (Radius).
+    # Bounding Box (grobe Vorauswahl)
+    # -------------------------------
+    # Unser Ziel ist eigentlich ein Kreis (Radius um den Standpunkt).
+    # Aber SQL (ohne Geo-Extensions) kann "Kreis um Punkt" schwieriger/teurer machen.
+    #
+    # Trick:
+    #  1) Wir filtern in SQL zuerst grob in einem Rechteck (Bounding Box).
+    #  2) Danach machen wir in Python den exakten Kreis-Test via Haversine.
+    #
+    # Vorteil:
+    #  - Die DB kann mit Index auf lat/lon schnell Kandidaten auswählen
+    #  - Python rechnet Distanz nur für Kandidaten, nicht für alle Stationen weltweit
     import math
 
+    # Näherung:
+    # 1° Latitude (Breitengrad) ~ 111 km
+    # -> Wie viele Grad entsprechen radius_km?
     lat_delta = radius_km / 111.0
+
+    # Longitude (Längengrad) ist abhängig von der Latitude:
+    # Je näher am Pol, desto "enger" liegen die Meridiane zusammen.
+    # 1° Longitude ~ 111 km * cos(latitude)
+    #
+    # cos(90°) = 0 -> Division durch 0, darum clampen wir lat auf +/-89.9
     lon_delta = radius_km / (111.0 * math.cos(math.radians(max(min(lat, 89.9), -89.9))) or 1.0)
     return lat - lat_delta, lat + lat_delta, lon - lon_delta, lon + lon_delta
 
 
 @app.get("/search", response_model=list[StationSearchOut])
 def search_stations(
+    # FastAPI nimmt diese Funktionsparameter automatisch aus der URL als Query-Parameter.
+    # Beispiel-Aufruf:
+    #   /search?lat=48.06&lon=8.49&radius_km=50&limit=20&start_year=2000&end_year=2020
+    #
+    # Query(..., ge=..., le=...) ist Validierung:
+    # - ge = "greater or equal" (>=)
+    # - le = "less or equal" (<=)
+    # - gt = "greater than" (>)
+    # Wenn Werte nicht passen, gibt FastAPI automatisch HTTP 422 zurück (validations error).
     lat: float = Query(..., ge=-90.0, le=90.0),
     lon: float = Query(..., ge=-180.0, le=180.0),
     radius_km: float = Query(50.0, gt=0.0, le=2000.0),
@@ -163,44 +235,101 @@ def search_stations(
     start_year: int | None = Query(None, ge=1700, le=2025),
     end_year: int | None = Query(None, ge=1700, le=2025),
 ):
-    # 1) Eingaben prüfen
+    # Ziel dieser Funktion:
+    # 1) Stationen im Umkreis (radius_km) um (lat, lon) finden
+    # 2) optional nach Datenabdeckung filtern (start_year/end_year)
+    # 3) nach Entfernung sortieren und auf limit begrenzen
+
+    # 1) Eingaben prüfen (fachlicher Check, den FastAPI nicht automatisch macht)
     if start_year is not None and end_year is not None and start_year > end_year:
         raise HTTPException(status_code=400, detail="start_year must be <= end_year")
 
     # 2) Bounding Box berechnen (schnelle Vorauswahl in SQL)
+    # Ergebnis: 4 Zahlen, die ein Rechteck definieren:
+    #   s.lat BETWEEN min_lat AND max_lat
+    #   s.lon BETWEEN min_lon AND max_lon
     min_lat, max_lat, min_lon, max_lon = _bounding_box(lat, lon, radius_km)
 
     # 3) SQL bauen: Kandidaten aus der Box holen + (optional) Coverage-Filter
+    #
+    # Wir bauen die WHERE-Klausel modular zusammen:
+    # - `where` enthält Textstücke (ohne Benutzerwerte!)
+    # - `params` enthält die konkreten Werte zu den %s Platzhaltern
+    #
+    # WICHTIG:
+    # - Wir interpolieren keine Userwerte in SQL-Strings (keine f-strings mit lat/lon etc.)
+    # - Stattdessen: SQL mit %s + params Liste -> psycopg setzt Werte sicher ein
+    # - Das verhindert SQL Injection
     where = ["s.lat BETWEEN %s AND %s", "s.lon BETWEEN %s AND %s"]
     params: list[object] = [min_lat, max_lat, min_lon, max_lon]
 
     # Die Aufgabe verlangt später Jahres-/Saisonmittel für TMIN und TMAX.
     # Daher filtern wir hier streng: Station muss (wenn Filter gesetzt) beide Zeiträume abdecken.
     if start_year is not None:
+        # Bedeutung:
+        # - tmin_first_year muss existieren und <= start_year sein
+        # - tmax_first_year muss existieren und <= start_year sein
+        #
+        # Dadurch stellen wir sicher: Station hat *ab* start_year Daten für TMIN und TMAX.
         where.append("(sc.tmin_first_year IS NOT NULL AND sc.tmin_first_year <= %s)")
         where.append("(sc.tmax_first_year IS NOT NULL AND sc.tmax_first_year <= %s)")
         params.extend([start_year, start_year])
     if end_year is not None:
+        # Bedeutung:
+        # - tmin_last_year muss existieren und >= end_year sein
+        # - tmax_last_year muss existieren und >= end_year sein
+        #
+        # Dadurch stellen wir sicher: Station hat *bis* end_year Daten für TMIN und TMAX.
         where.append("(sc.tmin_last_year IS NOT NULL AND sc.tmin_last_year >= %s)")
         where.append("(sc.tmax_last_year IS NOT NULL AND sc.tmax_last_year >= %s)")
         params.extend([end_year, end_year])
 
+    # `sql` ist ein f-string, aber:
+    # - Wir fügen damit nur unsere fest definierten WHERE-Teile zusammen
+    # - Wir interpolieren hier keine Benutzerwerte!
+    # Benutzerwerte sind ausschließlich in `params`.
     sql = f"""
         SELECT
           s.id, s.name, s.lat, s.lon, s.elev_m, s.state,
           sc.tmin_first_year, sc.tmin_last_year, sc.tmax_first_year, sc.tmax_last_year
         FROM stations s
+        -- LEFT JOIN: auch wenn Coverage fehlt, könnten Stationen erscheinen.
+        -- In unserem Fall filtern wir bei start_year/end_year aber auf IS NOT NULL,
+        -- d.h. ohne Coverage fallen sie bei gesetzten Filtern sowieso raus.
         LEFT JOIN station_coverage sc ON sc.id = s.id
         WHERE {" AND ".join(where)}
+        -- Sicherheits-Limit: Bounding Box kann (je nach Radius) sehr viele Stationen liefern.
+        -- Wir begrenzen erstmal hart, und schneiden danach in Python auf `limit` zu.
         LIMIT 5000
     """
 
     # 4) Kandidaten laden + echte Distanz berechnen + auf Radius filtern
+    #
+    # Ablauf:
+    # - SQL liefert Kandidaten (viele sind noch außerhalb des Kreises, weil Bounding Box Rechteck ist)
+    # - Für jeden Kandidaten:
+    #   - Distanz (Haversine) berechnen
+    #   - wenn dist > radius_km -> wegwerfen
+    #   - sonst -> in Ergebnisliste aufnehmen
     candidates: list[StationSearchOut] = []
     with connect() as conn:
         with conn.cursor() as cur:
+            # cur.execute(sql, params):
+            # - SQL enthält %s Platzhalter
+            # - params ist eine Liste in genau der passenden Reihenfolge
             cur.execute(sql, params)
             for row in cur.fetchall():
+                # row ist ein Tupel in der Reihenfolge des SELECT:
+                # 0 id
+                # 1 name
+                # 2 lat
+                # 3 lon
+                # 4 elev_m
+                # 5 state
+                # 6 tmin_first_year
+                # 7 tmin_last_year
+                # 8 tmax_first_year
+                # 9 tmax_last_year
                 dist = _haversine_km(lat, lon, row[2], row[3])
                 if dist > radius_km:
                     continue
@@ -221,5 +350,8 @@ def search_stations(
                 )
 
     # 5) Sortieren & Limitieren ("nächste Stationen")
+    # Sortieren nach der berechneten Distanz (kleinste zuerst).
     candidates.sort(key=lambda s: s.dist_km)
+
+    # Dann auf die gewünschte Max-Anzahl beschneiden.
     return candidates[:limit]
