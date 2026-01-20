@@ -48,29 +48,6 @@ class StationOut(BaseModel):
 
 
 
-@app.on_event("startup")
-def _startup():
-    ensure_schema()
-
-
-@app.post("/dev/seed")
-def dev_seed():
-    # Dev-Endpoint: legt eine Demo-Station an (nur einmal, dank ON CONFLICT).
-    ensure_schema()
-    with connect() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO stations (id, lat, lon, elev_m, state, name)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (id) DO NOTHING
-                """,
-                ("DEMO001", 48.062, 8.493, 0.0, None, "Demo Station"),
-            )
-        conn.commit()
-    return {"seeded": True}
-
-
 @app.get("/stations", response_model=list[StationOut])
 def list_stations(
     # Query-Parameter (optional) zum Begrenzen der Ergebnisanzahl.
@@ -430,3 +407,5 @@ def ui_search(
             },
         },
     )
+
+@app.get("ui/stations/{id}")
