@@ -1,6 +1,3 @@
-import os
-
-import psycopg
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 from app.db import connect, ensure_schema
@@ -44,11 +41,11 @@ def dev_seed():
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO stations (id, name, lat, lon)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO stations (id, lat, lon, elev_m, state, name)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT (id) DO NOTHING
                 """,
-                ("DEMO001", "Demo Station", 48.062, 8.493),
+                ("DEMO001", 48.062, 8.493, 0.0, None, "Demo Station"),
             )
         conn.commit()
     return {"seeded": True}
