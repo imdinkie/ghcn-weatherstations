@@ -3,6 +3,7 @@ import os
 import psycopg
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
+from app.db import connect, ensure_schema
 
 app = FastAPI(title="GHCN Weatherstations (Learning API)")
 
@@ -25,46 +26,9 @@ class StationOut(BaseModel):
     name: str
     lat: float
     lon: float
+    elev_m: float | None = None
+    state: str | None = None
 
-
-def connect():
-    # Wir lesen die DB-Verbindung aus der Umgebung (ENV).
-    # Wichtig: Python liest .env NICHT automatisch.
-    # Du musst z.B. `fastapi dev` so starten:
-    #   set -a; source .env; set +a; fastapi dev app/main.py
-    dsn = os.environ.get("DATABASE_URL")
-    if not dsn:
-        raise RuntimeError("DATABASE_URL environment variable not set.")
-    return psycopg.connect(dsn)
-
-
-def ensure_schema() -> None:
-    # Datenschema anlegen. 
-    with connect() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS stations (
-                  id TEXT PRIMARY KEY,
-                  lat DOUBLE PRECISION NOT NULL,
-                  lon DOUBLE PRECISION NOT NULL,
-                  elev_m DOUBLE PRECISION NOT NULL,
-                  state TEXT,
-                  name TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS station_coverage (
-                  id TEXT FOREIGN KEY NOT NULL,
-                  lat DOUBLE PRECISION NOT NULL,
-                  lon DOUBLE PRECISION NOT NULL,
-                  tmin_first_year INTEGER,
-                  tmin_last_year INTEGER,
-                  tmax_first_year INTEGER,
-                  tmax_last_year INTEGER
-                );
-                """
-            )
-        conn.commit()
 
 
 @app.on_event("startup")
@@ -114,7 +78,7 @@ def list_stations(
             # Stattdessen nutzt du Platzhalter (%s) und übergibst die Werte als Tuple.
             cur.execute(
                 """
-                SELECT id, name, lat, lon
+                SELECT id, name, lat, lon, elev_m, state
                 FROM stations
                 ORDER BY id
                 LIMIT %s
@@ -129,7 +93,7 @@ def list_stations(
     # Wir wandeln jedes Tupel in StationOut um und sammeln alles in einer Liste.
     stations: list[StationOut] = []
     for row in rows:
-        stations.append(StationOut(id=row[0], name=row[1], lat=row[2], lon=row[3]))
+        stations.append(StationOut(id=row[0], name=row[1], lat=row[2], lon=row[3], elev_m=row[4], state=row[5]))
 
     return stations
 
@@ -140,7 +104,7 @@ def get_station(station_id: str):
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, name, lat, lon
+                SELECT id, name, lat, lon, elev_m, state
                 FROM stations
                 WHERE id = %s
                 """,
@@ -152,5 +116,4 @@ def get_station(station_id: str):
     if row is None:
         raise HTTPException(status_code=404, detail="Station not found")
 
-    return StationOut(id=row[0], name=row[1], lat=row[2], lon=row[3])
-
+    return StationOut(id=row[0], name=row[1], lat=row[2], lon=row[3], elev_m=row[4], state=row[5])

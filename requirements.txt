@@ -2,3 +2,4 @@ fastapi[standard]
 uvicorn
 pydantic
 psycopg[binary]
+requests
