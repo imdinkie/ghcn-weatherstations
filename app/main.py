@@ -27,6 +27,10 @@ def root(request: Request):
                 "end_year": "",
             },
         },
+        "station.html", 
+        {
+            "request": request,
+        }
     )
 
 
@@ -408,4 +412,14 @@ def ui_search(
         },
     )
 
-@app.get("ui/stations/{id}")
+@app.get("/ui/stations/{station_id}")
+def ui_get_station(
+    request: Request,
+    station_id: str):
+    station = get_station(station_id)
+
+    return templates.TemplateResponse(
+        "station.html",
+        {"request": request,
+         "station": station}
+    )

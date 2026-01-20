@@ -16,10 +16,19 @@ label { display: block; margin: 10px 0; }
 input { padding: 6px 8px; max-width: 320px; width: 100%; }
 button { padding: 8px 12px; }
 
+.card {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 12px 0;
+  background: #fff;
+}
+
+.table-wrap { overflow-x: auto; }
+
 table { width: 100%; border-collapse: collapse; }
 th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
 th { background: #f5f5f5; }
 
 .muted { color: #666; }
 .strong { font-weight: 700; }
-

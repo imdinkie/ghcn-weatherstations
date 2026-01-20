@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Station {{ station.id }}{% endblock %}
+
+{% block content %}
+  <a href="javascript:history.back()">← zurück</a>
+
+  <h1 class="strong">{{ station.name }}</h1>
+  <p class="muted">{{ station.id }}</p>
+
+  <div class="card">
+    <table>
+      <tbody>
+        <tr>
+          <th scope="row">Koordinaten</th>
+          <td>{{ '%.4f'|format(station.lat) }}, {{ '%.4f'|format(station.lon) }}</td>
+        </tr>
+        <tr>
+          <th scope="row">Elevation</th>
+          <td>
+            {% if station.elev_m is not none %}
+              {{ station.elev_m }} m
+            {% else %}
+              —
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <th scope="row">State</th>
+          <td>{{ station.state if station.state else '—' }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="muted">
+    Debug/Weiterverwendung: <a href="/stations/{{ station.id }}">JSON anzeigen</a>
+  </p>
+
+  <details class="card">
+    <summary>Debug: Rohdaten</summary>
+    <pre>{{ station }}</pre>
+  </details>
+
+{% endblock %}

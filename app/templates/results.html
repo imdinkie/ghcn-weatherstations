@@ -6,9 +6,12 @@
   <a href="/">← zurück</a>
   <h1>Suchergebnisse</h1>
   <p class="muted">
-    Standpunkt: {{ params.lat }}, {{ params.lon }} — Radius: {{ params.radius_km }} km — Limit: {{ params.limit }}
-    {% if params.start_year and params.end_year %}
-      — Jahre: {{ params.start_year }}–{{ params.end_year }}
+    Standpunkt: {{ '%.4f'|format(params.lat) }}, {{ '%.4f'|format(params.lon) }}
+    · Radius: {{ params.radius_km }} km
+    · Limit: {{ params.limit }}
+    {% if params.start_year or params.end_year %}
+      · Jahre:
+      {{ params.start_year if params.start_year else '—' }}–{{ params.end_year if params.end_year else '—' }}
     {% endif %}
   </p>
 
@@ -18,6 +21,7 @@
       <p class="muted">Prüfe: Metadaten importiert? Filter zu streng? Radius zu klein?</p>
     </div>
   {% else %}
+    <p class="muted">{{ stations|length }} Treffer (sortiert nach Distanz).</p>
     <div class="card table-wrap">
       <table>
         <thead>
@@ -37,9 +41,13 @@
                 <div class="muted">{{ s.id }} · {{ '%.4f'|format(s.lat) }}, {{ '%.4f'|format(s.lon) }}</div>
               </td>
               <td>{{ '%.1f'|format(s.dist_km) }} km</td>
-              <td>{{ s.tmin_first_year }}–{{ s.tmin_last_year }}</td>
-              <td>{{ s.tmax_first_year }}–{{ s.tmax_last_year }}</td>
-              <td><a href="/stations/{{ s.id }}">JSON</a></td>
+              <td>{{ s.tmin_first_year if s.tmin_first_year else '—' }}–{{ s.tmin_last_year if s.tmin_last_year else '—' }}</td>
+              <td>{{ s.tmax_first_year if s.tmax_first_year else '—' }}–{{ s.tmax_last_year if s.tmax_last_year else '—' }}</td>
+              <td>
+                <a href="/ui/stations/{{ s.id }}">HTML</a>
+                <span class="muted">|</span>
+                <a href="/stations/{{ s.id }}">JSON</a>
+              </td>
             </tr>
           {% endfor %}
         </tbody>
@@ -47,4 +55,3 @@
     </div>
   {% endif %}
 {% endblock %}
-
