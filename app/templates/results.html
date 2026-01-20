@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}Suchergebnisse{% endblock %}
+
+{% block content %}
+  <a href="/">← zurück</a>
+  <h1>Suchergebnisse</h1>
+  <p class="muted">
+    Standpunkt: {{ params.lat }}, {{ params.lon }} — Radius: {{ params.radius_km }} km — Limit: {{ params.limit }}
+    {% if params.start_year and params.end_year %}
+      — Jahre: {{ params.start_year }}–{{ params.end_year }}
+    {% endif %}
+  </p>
+
+  {% if not stations %}
+    <div class="card">
+      <p>Keine Stationen gefunden (oder DB leer).</p>
+      <p class="muted">Prüfe: Metadaten importiert? Filter zu streng? Radius zu klein?</p>
+    </div>
+  {% else %}
+    <div class="card table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Station</th>
+            <th>Distanz</th>
+            <th>TMIN Jahre</th>
+            <th>TMAX Jahre</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in stations %}
+            <tr>
+              <td>
+                <div class="strong">{{ s.name }}</div>
+                <div class="muted">{{ s.id }} · {{ '%.4f'|format(s.lat) }}, {{ '%.4f'|format(s.lon) }}</div>
+              </td>
+              <td>{{ '%.1f'|format(s.dist_km) }} km</td>
+              <td>{{ s.tmin_first_year }}–{{ s.tmin_last_year }}</td>
+              <td>{{ s.tmax_first_year }}–{{ s.tmax_last_year }}</td>
+              <td><a href="/stations/{{ s.id }}">JSON</a></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+{% endblock %}
+

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Stationssuche{% endblock %}
+
+{% block content %}
+  <h1>Stationssuche</h1>
+  <p class="muted">
+    Standpunkt eingeben → Stationen im Radius finden → Station auswählen.
+  </p>
+
+  <form class="card" method="get" action="/ui/search">
+    <div class="grid">
+      <label>Latitude
+        <input name="lat" type="number" step="any" required value="{{ defaults.lat }}" />
+      </label>
+      <label>Longitude
+        <input name="lon" type="number" step="any" required value="{{ defaults.lon }}" />
+      </label>
+      <label>Radius (km)
+        <input name="radius_km" type="number" step="1" required value="{{ defaults.radius_km }}" />
+      </label>
+      <label>Limit
+        <input name="limit" type="number" step="1" required value="{{ defaults.limit }}" />
+      </label>
+      <label>Startjahr (optional)
+        <input name="start_year" type="number" step="1" value="{{ defaults.start_year }}" />
+      </label>
+      <label>Endjahr (optional)
+        <input name="end_year" type="number" step="1" value="{{ defaults.end_year }}" />
+      </label>
+    </div>
+
+    <div class="row">
+      <button type="submit">Suchen</button>
+      <span class="muted">Tipp: Import vorher ausführen, sonst ist die DB leer.</span>
+    </div>
+  </form>
+
+  <p class="muted">
+    API-Docs: <a href="/docs">/docs</a> — JSON-Suche: <a href="/search?lat={{ defaults.lat }}&lon={{ defaults.lon }}&radius_km={{ defaults.radius_km }}&limit={{ defaults.limit }}">/search</a>
+  </p>
+{% endblock %}
+

@@ -1,13 +1,33 @@
-from fastapi import FastAPI, HTTPException, Query
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from app.db import connect, ensure_schema
+from fastapi.templating import Jinja2Templates
 
 app = FastAPI(title="GHCN Weatherstations (Learning API)")
-
+BASE_DIR = Path(__file__).resolve().parent
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 @app.get("/")
-def root():
-    return {"message": "API is running. Open /docs for Swagger UI."}
+def root(request: Request):
+    # Einfache HTML-Startseite mit Formular (GUI) für die Stationssuche.
+    return templates.TemplateResponse(
+        "index.html",
+        {
+            "request": request,
+            "defaults": {
+                "lat": 48.062,
+                "lon": 8.493,
+                "radius_km": 50,
+                "limit": 20,
+                "start_year": "",
+                "end_year": "",
+            },
+        },
+    )
 
 
 @app.get("/health")
@@ -355,3 +375,58 @@ def search_stations(
 
     # Dann auf die gewünschte Max-Anzahl beschneiden.
     return candidates[:limit]
+
+
+@app.get("/ui/search")
+def ui_search(
+    request: Request,
+    lat: float = Query(..., ge=-90.0, le=90.0),
+    lon: float = Query(..., ge=-180.0, le=180.0),
+    radius_km: float = Query(50.0, gt=0.0, le=2000.0),
+    limit: int = Query(20, gt=0, le=200),
+    # WICHTIG:
+    # HTML <input type="number"> sendet bei leerem Feld trotzdem "start_year=" (leerer String).
+    # FastAPI kann "" NICHT automatisch zu None konvertieren, wenn der Typ `int | None` ist -> 422.
+    #
+    # Darum nehmen wir hier erst `str | None` an und parsen selbst:
+    # - None oder "" -> None
+    # - sonst -> int(...)
+    start_year: str | None = Query(None),
+    end_year: str | None = Query(None),
+):
+    # UI-Route: gleiche Logik wie /search (API), aber HTML-Output statt JSON.
+    start_year_i: int | None
+    end_year_i: int | None
+
+    start_year_i = None if start_year in (None, "") else int(start_year)
+    end_year_i = None if end_year in (None, "") else int(end_year)
+
+    # Bounds wie in der API (und Aufgabenstellung: aktuelles Vorjahr = 2025)
+    if start_year_i is not None and not (1700 <= start_year_i <= 2025):
+        raise HTTPException(status_code=400, detail="start_year out of range")
+    if end_year_i is not None and not (1700 <= end_year_i <= 2025):
+        raise HTTPException(status_code=400, detail="end_year out of range")
+
+    stations = search_stations(
+        lat=lat,
+        lon=lon,
+        radius_km=radius_km,
+        limit=limit,
+        start_year=start_year_i,
+        end_year=end_year_i,
+    )
+    return templates.TemplateResponse(
+        "results.html",
+        {
+            "request": request,
+            "stations": stations,
+            "params": {
+                "lat": lat,
+                "lon": lon,
+                "radius_km": radius_km,
+                "limit": limit,
+                "start_year": start_year_i,
+                "end_year": end_year_i,
+            },
+        },
+    )
