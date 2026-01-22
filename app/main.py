@@ -1,3 +1,5 @@
+import datetime as dt
+import json
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -10,6 +12,15 @@ app = FastAPI(title="GHCN Weatherstations (Learning API)")
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+
+@app.on_event("startup")
+def _startup() -> None:
+    ensure_schema()
+
+
+MAX_YEAR = dt.date.today().year - 1
+
 
 @app.get("/")
 def root(request: Request):
@@ -27,10 +38,6 @@ def root(request: Request):
                 "end_year": "",
             },
         },
-        "station.html", 
-        {
-            "request": request,
-        }
     )
 
 
@@ -232,9 +239,9 @@ def search_stations(
     lon: float = Query(..., ge=-180.0, le=180.0),
     radius_km: float = Query(50.0, gt=0.0, le=2000.0),
     limit: int = Query(20, gt=0, le=200),
-    # Letztes mögliches Endjahr ist das aktuelle Vorjahr (heute: 2025).
-    start_year: int | None = Query(None, ge=1700, le=2025),
-    end_year: int | None = Query(None, ge=1700, le=2025),
+    # Letztes mögliches Endjahr ist das aktuelle Vorjahr.
+    start_year: int | None = Query(None, ge=1700),
+    end_year: int | None = Query(None, ge=1700),
 ):
     # Ziel dieser Funktion:
     # 1) Stationen im Umkreis (radius_km) um (lat, lon) finden
@@ -244,6 +251,10 @@ def search_stations(
     # 1) Eingaben prüfen (fachlicher Check, den FastAPI nicht automatisch macht)
     if start_year is not None and end_year is not None and start_year > end_year:
         raise HTTPException(status_code=400, detail="start_year must be <= end_year")
+    if start_year is not None and start_year > MAX_YEAR:
+        raise HTTPException(status_code=400, detail=f"start_year must be <= {MAX_YEAR}")
+    if end_year is not None and end_year > MAX_YEAR:
+        raise HTTPException(status_code=400, detail=f"end_year must be <= {MAX_YEAR}")
 
     # 2) Bounding Box berechnen (schnelle Vorauswahl in SQL)
     # Ergebnis: 4 Zahlen, die ein Rechteck definieren:
@@ -264,25 +275,35 @@ def search_stations(
     where = ["s.lat BETWEEN %s AND %s", "s.lon BETWEEN %s AND %s"]
     params: list[object] = [min_lat, max_lat, min_lon, max_lon]
 
-    # Die Aufgabe verlangt später Jahres-/Saisonmittel für TMIN und TMAX.
-    # Daher filtern wir hier streng: Station muss (wenn Filter gesetzt) beide Zeiträume abdecken.
-    if start_year is not None:
-        # Bedeutung:
-        # - tmin_first_year muss existieren und <= start_year sein
-        # - tmax_first_year muss existieren und <= start_year sein
-        #
-        # Dadurch stellen wir sicher: Station hat *ab* start_year Daten für TMIN und TMAX.
-        where.append("(sc.tmin_first_year IS NOT NULL AND sc.tmin_first_year <= %s)")
-        where.append("(sc.tmax_first_year IS NOT NULL AND sc.tmax_first_year <= %s)")
+    # Filterlogik: Station ist passend, wenn sie den Zeitraum für mindestens eines der Elemente abdeckt:
+    # - entweder TMIN (first<=start und last>=end)
+    # - oder TMAX (first<=start und last>=end)
+    if start_year is not None and end_year is not None:
+        where.append(
+            """(
+              (sc.tmin_first_year IS NOT NULL AND sc.tmin_first_year <= %s AND sc.tmin_last_year IS NOT NULL AND sc.tmin_last_year >= %s)
+              OR
+              (sc.tmax_first_year IS NOT NULL AND sc.tmax_first_year <= %s AND sc.tmax_last_year IS NOT NULL AND sc.tmax_last_year >= %s)
+            )"""
+        )
+        params.extend([start_year, end_year, start_year, end_year])
+    elif start_year is not None:
+        where.append(
+            """(
+              (sc.tmin_first_year IS NOT NULL AND sc.tmin_first_year <= %s)
+              OR
+              (sc.tmax_first_year IS NOT NULL AND sc.tmax_first_year <= %s)
+            )"""
+        )
         params.extend([start_year, start_year])
-    if end_year is not None:
-        # Bedeutung:
-        # - tmin_last_year muss existieren und >= end_year sein
-        # - tmax_last_year muss existieren und >= end_year sein
-        #
-        # Dadurch stellen wir sicher: Station hat *bis* end_year Daten für TMIN und TMAX.
-        where.append("(sc.tmin_last_year IS NOT NULL AND sc.tmin_last_year >= %s)")
-        where.append("(sc.tmax_last_year IS NOT NULL AND sc.tmax_last_year >= %s)")
+    elif end_year is not None:
+        where.append(
+            """(
+              (sc.tmin_last_year IS NOT NULL AND sc.tmin_last_year >= %s)
+              OR
+              (sc.tmax_last_year IS NOT NULL AND sc.tmax_last_year >= %s)
+            )"""
+        )
         params.extend([end_year, end_year])
 
     # `sql` ist ein f-string, aber:
@@ -382,10 +403,10 @@ def ui_search(
     start_year_i = None if start_year in (None, "") else int(start_year)
     end_year_i = None if end_year in (None, "") else int(end_year)
 
-    # Bounds wie in der API (und Aufgabenstellung: aktuelles Vorjahr = 2025)
-    if start_year_i is not None and not (1700 <= start_year_i <= 2025):
+    # Bounds wie in der API (und Aufgabenstellung: aktuelles Vorjahr)
+    if start_year_i is not None and not (1700 <= start_year_i <= MAX_YEAR):
         raise HTTPException(status_code=400, detail="start_year out of range")
-    if end_year_i is not None and not (1700 <= end_year_i <= 2025):
+    if end_year_i is not None and not (1700 <= end_year_i <= MAX_YEAR):
         raise HTTPException(status_code=400, detail="end_year out of range")
 
     stations = search_stations(
@@ -401,6 +422,27 @@ def ui_search(
         {
             "request": request,
             "stations": stations,
+            "stations_json": json.dumps(
+                [
+                    {
+                        "id": s.id,
+                        "name": s.name,
+                        "lat": s.lat,
+                        "lon": s.lon,
+                        "dist_km": s.dist_km,
+                    }
+                    for s in stations
+                ]
+            ),
+            "params_json": json.dumps(
+                {
+                    "lat": lat,
+                    "lon": lon,
+                    "radius_km": radius_km,
+                    "start_year": start_year_i,
+                    "end_year": end_year_i,
+                }
+            ),
             "params": {
                 "lat": lat,
                 "lon": lon,
