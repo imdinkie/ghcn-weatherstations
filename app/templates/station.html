@@ -7,74 +7,82 @@
 {% endblock %}
 
 {% block content %}
-  <a href="/">← zurück zur Suche</a>
+  <div class="layout">
+    <section class="main">
+      <h1 class="page-title">{{ station.name }}</h1>
+      <p class="muted page-subtitle">{{ station.id }} · {{ '%.4f'|format(station.lat) }}, {{ '%.4f'|format(station.lon) }}</p>
 
-  <h1 class="strong">{{ station.name }}</h1>
-  <p class="muted">{{ station.id }} · {{ '%.4f'|format(station.lat) }}, {{ '%.4f'|format(station.lon) }}</p>
+      <div class="card">
+        <div id="status" class="muted">Lade Daten…</div>
+        <canvas id="chart" height="140"></canvas>
+      </div>
 
-  <div class="card">
-    <form class="row" id="controls" novalidate>
-      <label>Startjahr
-        <input id="start_year" type="number" min="1700" max="{{ max_year }}" value="{{ start_year }}" />
-        <div class="field-error" id="err-start_year"></div>
-      </label>
-      <label>Endjahr
-        <input id="end_year" type="number" min="1700" max="{{ max_year }}" value="{{ end_year }}" />
-        <div class="field-error" id="err-end_year"></div>
-      </label>
-      <button type="button" id="load">Laden</button>
-    </form>
-  </div>
+      <div class="card table-wrap">
+        <table id="table">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
 
-  <div class="card">
-    <table class="matrix">
-      <thead>
-        <tr>
-          <th></th>
-          <th>TMIN</th>
-          <th>TMAX</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <th>Year</th>
-          <td><input type="checkbox" class="metric" value="tmin_year" checked /></td>
-          <td><input type="checkbox" class="metric" value="tmax_year" checked /></td>
-        </tr>
-        <tr>
-          <th>Spring</th>
-          <td><input type="checkbox" class="metric" value="tmin_spring" /></td>
-          <td><input type="checkbox" class="metric" value="tmax_spring" /></td>
-        </tr>
-        <tr>
-          <th>Summer</th>
-          <td><input type="checkbox" class="metric" value="tmin_summer" /></td>
-          <td><input type="checkbox" class="metric" value="tmax_summer" /></td>
-        </tr>
-        <tr>
-          <th>Autumn</th>
-          <td><input type="checkbox" class="metric" value="tmin_autumn" /></td>
-          <td><input type="checkbox" class="metric" value="tmax_autumn" /></td>
-        </tr>
-        <tr>
-          <th>Winter</th>
-          <td><input type="checkbox" class="metric" value="tmin_winter" /></td>
-          <td><input type="checkbox" class="metric" value="tmax_winter" /></td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+    <aside class="sidebar">
+      <div class="card">
+        <a href="/">← zurück zur Suche</a>
+      </div>
 
-  <div class="card">
-    <div id="status" class="muted">Wähle Metriken und klicke „Laden“.</div>
-    <canvas id="chart" height="120"></canvas>
-  </div>
+      <div class="card">
+        <form id="controls" novalidate>
+          <label>Startjahr
+            <input id="start_year" type="number" min="1700" max="{{ max_year }}" value="{{ start_year }}" />
+            <div class="field-error" id="err-start_year"></div>
+          </label>
+          <label>Endjahr
+            <input id="end_year" type="number" min="1700" max="{{ max_year }}" value="{{ end_year }}" />
+            <div class="field-error" id="err-end_year"></div>
+          </label>
+          <button type="button" id="load">Laden</button>
+        </form>
+      </div>
 
-  <div class="card table-wrap">
-    <table id="table">
-      <thead></thead>
-      <tbody></tbody>
-    </table>
+      <div class="card">
+        <table class="matrix">
+          <thead>
+            <tr>
+              <th></th>
+              <th>TMIN</th>
+              <th>TMAX</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th>Year</th>
+              <td><input type="checkbox" class="metric" value="tmin_year" checked /></td>
+              <td><input type="checkbox" class="metric" value="tmax_year" checked /></td>
+            </tr>
+            <tr>
+              <th>Spring</th>
+              <td><input type="checkbox" class="metric" value="tmin_spring" /></td>
+              <td><input type="checkbox" class="metric" value="tmax_spring" /></td>
+            </tr>
+            <tr>
+              <th>Summer</th>
+              <td><input type="checkbox" class="metric" value="tmin_summer" /></td>
+              <td><input type="checkbox" class="metric" value="tmax_summer" /></td>
+            </tr>
+            <tr>
+              <th>Autumn</th>
+              <td><input type="checkbox" class="metric" value="tmin_autumn" /></td>
+              <td><input type="checkbox" class="metric" value="tmax_autumn" /></td>
+            </tr>
+            <tr>
+              <th>Winter</th>
+              <td><input type="checkbox" class="metric" value="tmin_winter" /></td>
+              <td><input type="checkbox" class="metric" value="tmax_winter" /></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </aside>
   </div>
 
 {% endblock %}
@@ -97,6 +105,8 @@
       const tableBody = document.querySelector("#table tbody");
 
       let chart = null;
+      let pendingTimer = null;
+      let loading = false;
 
       function selectedMetrics() {
         return metricEls.filter((el) => el.checked).map((el) => el.value);
@@ -141,6 +151,14 @@
         loadBtn.disabled = !startInput.checkValidity() || !endInput.checkValidity() || selectedMetrics().length === 0;
       }
 
+      function scheduleLoad() {
+        if (pendingTimer) clearTimeout(pendingTimer);
+        pendingTimer = setTimeout(() => {
+          validateYears();
+          if (!loadBtn.disabled) load();
+        }, 450);
+      }
+
       function metricLabel(key) {
         const map = {
           tmin_year: "TMIN Year",
@@ -158,6 +176,7 @@
       }
 
       async function load() {
+        if (loading) return;
         const metrics = selectedMetrics();
         if (metrics.length === 0) {
           status.textContent = "Bitte mindestens eine Checkbox auswählen.";
@@ -179,6 +198,7 @@
 
         status.textContent = "Lade Daten… (beim ersten Mal kann der Download etwas dauern)";
         loadBtn.disabled = true;
+        loading = true;
 
         try {
           const url = `/api/stations/${encodeURIComponent(stationId)}/series?start_year=${startYear}&end_year=${endYear}&metrics=${encodeURIComponent(metrics.join(","))}`;
@@ -193,6 +213,7 @@
         } catch (e) {
           status.textContent = "Fehler beim Laden: " + (e && e.message ? e.message : String(e));
         } finally {
+          loading = false;
           loadBtn.disabled = false;
           validateYears();
         }
@@ -236,12 +257,15 @@
 
       loadBtn.addEventListener("click", load);
       metricEls.forEach((el) => el.addEventListener("change", () => { validateYears(); load(); }));
-      startInput.addEventListener("input", validateYears);
-      endInput.addEventListener("input", validateYears);
-      startInput.addEventListener("blur", validateYears);
-      endInput.addEventListener("blur", validateYears);
+      startInput.addEventListener("input", scheduleLoad);
+      endInput.addEventListener("input", scheduleLoad);
+      startInput.addEventListener("blur", scheduleLoad);
+      endInput.addEventListener("blur", scheduleLoad);
 
       validateYears();
+      if (!loadBtn.disabled) {
+        load();
+      }
     })();
   </script>
 {% endblock %}

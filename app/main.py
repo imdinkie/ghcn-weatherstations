@@ -26,20 +26,70 @@ MAX_YEAR = dt.date.today().year - 1
 
 @app.get("/")
 def root(request: Request):
-    # Einfache HTML-Startseite mit Formular (GUI) für die Stationssuche.
+    # Startseite: Suchformular + (optional) Suchergebnisse auf derselben Seite.
+    # Die Suche wird erst ausgeführt, wenn Parameter in der URL vorhanden sind.
+    qp = request.query_params
+    defaults = {
+        "lat": 48.062,
+        "lon": 8.493,
+        "radius_km": 50,
+        "limit": 20,
+        "start_year": "",
+        "end_year": "",
+    }
+
+    has_search = "lat" in qp and "lon" in qp
+    if not has_search:
+        return templates.TemplateResponse(
+            "index.html",
+            {"request": request, "max_year": MAX_YEAR, "defaults": defaults, "stations": [], "stations_json": "[]", "params_json": "{}"},
+        )
+
+    lat = float(qp.get("lat"))
+    lon = float(qp.get("lon"))
+    radius_km = float(qp.get("radius_km", defaults["radius_km"]))
+    limit = int(qp.get("limit", defaults["limit"]))
+    start_year_s = qp.get("start_year", "")
+    end_year_s = qp.get("end_year", "")
+    start_year_i = None if start_year_s in ("", None) else int(start_year_s)
+    end_year_i = None if end_year_s in ("", None) else int(end_year_s)
+
+    stations = search_stations(
+        lat=lat,
+        lon=lon,
+        radius_km=radius_km,
+        limit=limit,
+        start_year=start_year_i,
+        end_year=end_year_i,
+    )
+
     return templates.TemplateResponse(
         "index.html",
         {
             "request": request,
             "max_year": MAX_YEAR,
             "defaults": {
-                "lat": 48.062,
-                "lon": 8.493,
-                "radius_km": 50,
-                "limit": 20,
-                "start_year": "",
-                "end_year": "",
+                "lat": lat,
+                "lon": lon,
+                "radius_km": radius_km,
+                "limit": limit,
+                "start_year": start_year_s,
+                "end_year": end_year_s,
             },
+            "stations": stations,
+            "stations_json": json.dumps(
+                [{"id": s.id, "name": s.name, "lat": s.lat, "lon": s.lon, "dist_km": s.dist_km} for s in stations]
+            ),
+            "params_json": json.dumps(
+                {
+                    "lat": lat,
+                    "lon": lon,
+                    "radius_km": radius_km,
+                    "limit": limit,
+                    "start_year": start_year_i,
+                    "end_year": end_year_i,
+                }
+            ),
         },
     )
 
@@ -380,82 +430,6 @@ def search_stations(
 
     # Dann auf die gewünschte Max-Anzahl beschneiden.
     return candidates[:limit]
-
-
-@app.get("/ui/search")
-def ui_search(
-    request: Request,
-    lat: float = Query(..., ge=-90.0, le=90.0),
-    lon: float = Query(..., ge=-180.0, le=180.0),
-    radius_km: float = Query(50.0, gt=0.0, le=2000.0),
-    limit: int = Query(20, gt=0, le=200),
-    # WICHTIG:
-    # HTML <input type="number"> sendet bei leerem Feld trotzdem "start_year=" (leerer String).
-    # FastAPI kann "" NICHT automatisch zu None konvertieren, wenn der Typ `int | None` ist -> 422.
-    #
-    # Darum nehmen wir hier erst `str | None` an und parsen selbst:
-    # - None oder "" -> None
-    # - sonst -> int(...)
-    start_year: str | None = Query(None),
-    end_year: str | None = Query(None),
-):
-    # UI-Route: gleiche Logik wie /search (API), aber HTML-Output statt JSON.
-    start_year_i: int | None
-    end_year_i: int | None
-
-    start_year_i = None if start_year in (None, "") else int(start_year)
-    end_year_i = None if end_year in (None, "") else int(end_year)
-
-    # Bounds wie in der API (und Aufgabenstellung: aktuelles Vorjahr)
-    if start_year_i is not None and not (1700 <= start_year_i <= MAX_YEAR):
-        raise HTTPException(status_code=400, detail="start_year out of range")
-    if end_year_i is not None and not (1700 <= end_year_i <= MAX_YEAR):
-        raise HTTPException(status_code=400, detail="end_year out of range")
-
-    stations = search_stations(
-        lat=lat,
-        lon=lon,
-        radius_km=radius_km,
-        limit=limit,
-        start_year=start_year_i,
-        end_year=end_year_i,
-    )
-    return templates.TemplateResponse(
-        "results.html",
-        {
-            "request": request,
-            "stations": stations,
-            "stations_json": json.dumps(
-                [
-                    {
-                        "id": s.id,
-                        "name": s.name,
-                        "lat": s.lat,
-                        "lon": s.lon,
-                        "dist_km": s.dist_km,
-                    }
-                    for s in stations
-                ]
-            ),
-            "params_json": json.dumps(
-                {
-                    "lat": lat,
-                    "lon": lon,
-                    "radius_km": radius_km,
-                    "start_year": start_year_i,
-                    "end_year": end_year_i,
-                }
-            ),
-            "params": {
-                "lat": lat,
-                "lon": lon,
-                "radius_km": radius_km,
-                "limit": limit,
-                "start_year": start_year_i,
-                "end_year": end_year_i,
-            },
-        },
-    )
 
 @app.get("/ui/stations/{station_id}")
 def ui_get_station(
