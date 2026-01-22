@@ -5,8 +5,9 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from app.cache import ALL_METRICS, ensure_cached_metrics, load_cached_series
 from app.db import connect, ensure_schema
-from app.ghcn_dly import compute_means, ensure_station_dly
+from app.ghcn_dly import ensure_station_dly
 from fastapi.templating import Jinja2Templates
 
 app = FastAPI(title="GHCN Weatherstations (Learning API)")
@@ -495,36 +496,22 @@ def api_station_series(
         raise HTTPException(status_code=400, detail=f"end_year must be <= {MAX_YEAR}")
 
     requested = [m.strip() for m in metrics.split(",") if m.strip()]
-    allowed = {
-        "tmin_year",
-        "tmax_year",
-        "tmin_spring",
-        "tmax_spring",
-        "tmin_summer",
-        "tmax_summer",
-        "tmin_autumn",
-        "tmax_autumn",
-        "tmin_winter",
-        "tmax_winter",
-    }
-    if not requested or any(m not in allowed for m in requested):
+    if not requested or any(m not in set(ALL_METRICS) for m in requested):
         raise HTTPException(status_code=400, detail="invalid metrics")
 
     dly_path, sha = ensure_station_dly(station_id)
-    need_elements = {"TMIN" if m.startswith("tmin_") else "TMAX" for m in requested}
-    series_all = compute_means(dly_path, start_year=start_year, end_year=end_year, elements=need_elements)
-
-    series_out = []
-    for key in requested:
-        points = [
-            {
-                "year": p.year,
-                "value_c": p.value_c,
-                "present_days": p.present_days,
-                "expected_days": p.expected_days,
-            }
-            for p in series_all[key]
-        ]
-        series_out.append({"key": key, "sha256": sha, "points": points})
-
+    ensure_cached_metrics(
+        station_id=station_id,
+        sha256=sha,
+        dly_path=dly_path,
+        start_year=start_year,
+        end_year=end_year,
+    )
+    series_out = load_cached_series(
+        station_id=station_id,
+        sha256=sha,
+        start_year=start_year,
+        end_year=end_year,
+        metrics=requested,
+    )
     return {"station_id": station_id, "start_year": start_year, "end_year": end_year, "series": series_out}
