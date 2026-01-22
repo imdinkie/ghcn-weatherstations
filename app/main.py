@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from app.db import connect, ensure_schema
+from app.ghcn_dly import compute_means, ensure_station_dly
 from fastapi.templating import Jinja2Templates
 
 app = FastAPI(title="GHCN Weatherstations (Learning API)")
@@ -457,11 +458,73 @@ def ui_search(
 @app.get("/ui/stations/{station_id}")
 def ui_get_station(
     request: Request,
-    station_id: str):
+    station_id: str,
+    start_year: str | None = Query(None),
+    end_year: str | None = Query(None),
+):
     station = get_station(station_id)
+
+    start_year_i = None if start_year in (None, "") else int(start_year)
+    end_year_i = None if end_year in (None, "") else int(end_year)
+    if start_year_i is None:
+        start_year_i = 2000
+    if end_year_i is None:
+        end_year_i = MAX_YEAR
 
     return templates.TemplateResponse(
         "station.html",
         {"request": request,
-         "station": station}
+         "station": station,
+         "start_year": start_year_i,
+         "end_year": end_year_i,
+         "max_year": MAX_YEAR}
     )
+
+
+@app.get("/api/stations/{station_id}/series")
+def api_station_series(
+    station_id: str,
+    start_year: int = Query(..., ge=1700),
+    end_year: int = Query(..., ge=1700),
+    metrics: str = Query(...),
+):
+    _ = get_station(station_id)
+    if start_year > end_year:
+        raise HTTPException(status_code=400, detail="start_year must be <= end_year")
+    if end_year > MAX_YEAR:
+        raise HTTPException(status_code=400, detail=f"end_year must be <= {MAX_YEAR}")
+
+    requested = [m.strip() for m in metrics.split(",") if m.strip()]
+    allowed = {
+        "tmin_year",
+        "tmax_year",
+        "tmin_spring",
+        "tmax_spring",
+        "tmin_summer",
+        "tmax_summer",
+        "tmin_autumn",
+        "tmax_autumn",
+        "tmin_winter",
+        "tmax_winter",
+    }
+    if not requested or any(m not in allowed for m in requested):
+        raise HTTPException(status_code=400, detail="invalid metrics")
+
+    dly_path, sha = ensure_station_dly(station_id)
+    need_elements = {"TMIN" if m.startswith("tmin_") else "TMAX" for m in requested}
+    series_all = compute_means(dly_path, start_year=start_year, end_year=end_year, elements=need_elements)
+
+    series_out = []
+    for key in requested:
+        points = [
+            {
+                "year": p.year,
+                "value_c": p.value_c,
+                "present_days": p.present_days,
+                "expected_days": p.expected_days,
+            }
+            for p in series_all[key]
+        ]
+        series_out.append({"key": key, "sha256": sha, "points": points})
+
+    return {"station_id": station_id, "start_year": start_year, "end_year": end_year, "series": series_out}

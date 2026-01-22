@@ -2,44 +2,199 @@
 
 {% block title %}Station {{ station.id }}{% endblock %}
 
+{% block head_extra %}
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+{% endblock %}
+
 {% block content %}
   <a href="javascript:history.back()">← zurück</a>
 
   <h1 class="strong">{{ station.name }}</h1>
-  <p class="muted">{{ station.id }}</p>
+  <p class="muted">{{ station.id }} · {{ '%.4f'|format(station.lat) }}, {{ '%.4f'|format(station.lon) }}</p>
 
   <div class="card">
-    <table>
+    <form class="row" id="controls">
+      <label>Startjahr
+        <input id="start_year" type="number" min="1700" max="{{ max_year }}" value="{{ start_year }}" />
+      </label>
+      <label>Endjahr
+        <input id="end_year" type="number" min="1700" max="{{ max_year }}" value="{{ end_year }}" />
+      </label>
+      <button type="button" id="load">Laden</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <table class="matrix">
+      <thead>
+        <tr>
+          <th></th>
+          <th>TMIN</th>
+          <th>TMAX</th>
+        </tr>
+      </thead>
       <tbody>
         <tr>
-          <th scope="row">Koordinaten</th>
-          <td>{{ '%.4f'|format(station.lat) }}, {{ '%.4f'|format(station.lon) }}</td>
+          <th>Year</th>
+          <td><input type="checkbox" class="metric" value="tmin_year" checked /></td>
+          <td><input type="checkbox" class="metric" value="tmax_year" checked /></td>
         </tr>
         <tr>
-          <th scope="row">Elevation</th>
-          <td>
-            {% if station.elev_m is not none %}
-              {{ station.elev_m }} m
-            {% else %}
-              —
-            {% endif %}
-          </td>
+          <th>Spring</th>
+          <td><input type="checkbox" class="metric" value="tmin_spring" /></td>
+          <td><input type="checkbox" class="metric" value="tmax_spring" /></td>
         </tr>
         <tr>
-          <th scope="row">State</th>
-          <td>{{ station.state if station.state else '—' }}</td>
+          <th>Summer</th>
+          <td><input type="checkbox" class="metric" value="tmin_summer" /></td>
+          <td><input type="checkbox" class="metric" value="tmax_summer" /></td>
+        </tr>
+        <tr>
+          <th>Autumn</th>
+          <td><input type="checkbox" class="metric" value="tmin_autumn" /></td>
+          <td><input type="checkbox" class="metric" value="tmax_autumn" /></td>
+        </tr>
+        <tr>
+          <th>Winter</th>
+          <td><input type="checkbox" class="metric" value="tmin_winter" /></td>
+          <td><input type="checkbox" class="metric" value="tmax_winter" /></td>
         </tr>
       </tbody>
     </table>
   </div>
 
-  <p class="muted">
-    Debug/Weiterverwendung: <a href="/stations/{{ station.id }}">JSON anzeigen</a>
-  </p>
+  <div class="card">
+    <div id="status" class="muted">Wähle Metriken und klicke „Laden“.</div>
+    <canvas id="chart" height="120"></canvas>
+  </div>
 
-  <details class="card">
-    <summary>Debug: Rohdaten</summary>
-    <pre>{{ station }}</pre>
-  </details>
+  <div class="card table-wrap">
+    <table id="table">
+      <thead></thead>
+      <tbody></tbody>
+    </table>
+  </div>
 
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    (function () {
+      const stationId = "{{ station.id }}";
+      const maxYear = {{ max_year }};
+
+      const startInput = document.getElementById("start_year");
+      const endInput = document.getElementById("end_year");
+      const loadBtn = document.getElementById("load");
+      const status = document.getElementById("status");
+      const metricEls = Array.from(document.querySelectorAll("input.metric"));
+
+      const tableHead = document.querySelector("#table thead");
+      const tableBody = document.querySelector("#table tbody");
+
+      let chart = null;
+
+      function selectedMetrics() {
+        return metricEls.filter((el) => el.checked).map((el) => el.value);
+      }
+
+      function clampYears(startYear, endYear) {
+        if (endYear > maxYear) endYear = maxYear;
+        if (startYear > endYear) startYear = endYear;
+        return { startYear, endYear };
+      }
+
+      function metricLabel(key) {
+        const map = {
+          tmin_year: "TMIN Year",
+          tmax_year: "TMAX Year",
+          tmin_spring: "TMIN Spring",
+          tmax_spring: "TMAX Spring",
+          tmin_summer: "TMIN Summer",
+          tmax_summer: "TMAX Summer",
+          tmin_autumn: "TMIN Autumn",
+          tmax_autumn: "TMAX Autumn",
+          tmin_winter: "TMIN Winter",
+          tmax_winter: "TMAX Winter",
+        };
+        return map[key] || key;
+      }
+
+      async function load() {
+        const metrics = selectedMetrics();
+        if (metrics.length === 0) {
+          status.textContent = "Bitte mindestens eine Checkbox auswählen.";
+          return;
+        }
+
+        let startYear = Number(startInput.value);
+        let endYear = Number(endInput.value);
+        if (!Number.isFinite(startYear) || !Number.isFinite(endYear)) {
+          status.textContent = "Bitte Startjahr und Endjahr eingeben.";
+          return;
+        }
+        ({ startYear, endYear } = clampYears(startYear, endYear));
+        startInput.value = String(startYear);
+        endInput.value = String(endYear);
+
+        status.textContent = "Lade Daten… (beim ersten Mal kann der Download etwas dauern)";
+        loadBtn.disabled = true;
+
+        try {
+          const url = `/api/stations/${encodeURIComponent(stationId)}/series?start_year=${startYear}&end_year=${endYear}&metrics=${encodeURIComponent(metrics.join(","))}`;
+          const res = await fetch(url);
+          if (!res.ok) {
+            const txt = await res.text();
+            throw new Error(txt || `HTTP ${res.status}`);
+          }
+          const data = await res.json();
+          render(data.series, startYear, endYear);
+          status.textContent = "";
+        } catch (e) {
+          status.textContent = "Fehler beim Laden: " + (e && e.message ? e.message : String(e));
+        } finally {
+          loadBtn.disabled = false;
+        }
+      }
+
+      function render(series, startYear, endYear) {
+        const years = [];
+        for (let y = startYear; y <= endYear; y++) years.push(y);
+
+        const datasets = series.map((s) => ({
+          label: metricLabel(s.key),
+          data: s.points.map((p) => (p.value_c == null ? null : Number(p.value_c))),
+          spanGaps: false,
+        }));
+
+        if (chart) chart.destroy();
+        chart = new Chart(document.getElementById("chart"), {
+          type: "line",
+          data: { labels: years, datasets },
+          options: { plugins: { legend: { position: "bottom" } } },
+        });
+
+        tableHead.innerHTML = "";
+        tableBody.innerHTML = "";
+
+        const thRow = document.createElement("tr");
+        thRow.innerHTML = `<th>Jahr</th>` + series.map((s) => `<th>${metricLabel(s.key)}</th>`).join("");
+        tableHead.appendChild(thRow);
+
+        for (let i = 0; i < years.length; i++) {
+          const tr = document.createElement("tr");
+          const cells = [`<td>${years[i]}</td>`];
+          for (const s of series) {
+            const p = s.points[i];
+            cells.push(`<td>${p.value_c == null ? "—" : Number(p.value_c).toFixed(2)}</td>`);
+          }
+          tr.innerHTML = cells.join("");
+          tableBody.appendChild(tr);
+        }
+      }
+
+      loadBtn.addEventListener("click", load);
+      metricEls.forEach((el) => el.addEventListener("change", load));
+    })();
+  </script>
 {% endblock %}
