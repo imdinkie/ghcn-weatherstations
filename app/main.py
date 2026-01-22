@@ -31,6 +31,7 @@ def root(request: Request):
         "index.html",
         {
             "request": request,
+            "max_year": MAX_YEAR,
             "defaults": {
                 "lat": 48.062,
                 "lon": 8.493,

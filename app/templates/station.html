@@ -7,18 +7,20 @@
 {% endblock %}
 
 {% block content %}
-  <a href="javascript:history.back()">← zurück</a>
+  <a href="/">← zurück zur Suche</a>
 
   <h1 class="strong">{{ station.name }}</h1>
   <p class="muted">{{ station.id }} · {{ '%.4f'|format(station.lat) }}, {{ '%.4f'|format(station.lon) }}</p>
 
   <div class="card">
-    <form class="row" id="controls">
+    <form class="row" id="controls" novalidate>
       <label>Startjahr
         <input id="start_year" type="number" min="1700" max="{{ max_year }}" value="{{ start_year }}" />
+        <div class="field-error" id="err-start_year"></div>
       </label>
       <label>Endjahr
         <input id="end_year" type="number" min="1700" max="{{ max_year }}" value="{{ end_year }}" />
+        <div class="field-error" id="err-end_year"></div>
       </label>
       <button type="button" id="load">Laden</button>
     </form>
@@ -88,6 +90,8 @@
       const loadBtn = document.getElementById("load");
       const status = document.getElementById("status");
       const metricEls = Array.from(document.querySelectorAll("input.metric"));
+      const errStart = document.getElementById("err-start_year");
+      const errEnd = document.getElementById("err-end_year");
 
       const tableHead = document.querySelector("#table thead");
       const tableBody = document.querySelector("#table tbody");
@@ -102,6 +106,39 @@
         if (endYear > maxYear) endYear = maxYear;
         if (startYear > endYear) startYear = endYear;
         return { startYear, endYear };
+      }
+
+      function validateYears() {
+        startInput.setCustomValidity("");
+        endInput.setCustomValidity("");
+        errStart.textContent = "";
+        errEnd.textContent = "";
+
+        const startYear = Number(startInput.value);
+        const endYear = Number(endInput.value);
+
+        if (!Number.isFinite(startYear)) {
+          startInput.setCustomValidity("Startjahr fehlt");
+          errStart.textContent = "Bitte Startjahr eingeben.";
+        } else if (startYear < 1700 || startYear > maxYear) {
+          startInput.setCustomValidity("Startjahr ungültig");
+          errStart.textContent = `Startjahr muss zwischen 1700 und ${maxYear} liegen.`;
+        }
+
+        if (!Number.isFinite(endYear)) {
+          endInput.setCustomValidity("Endjahr fehlt");
+          errEnd.textContent = "Bitte Endjahr eingeben.";
+        } else if (endYear < 1700 || endYear > maxYear) {
+          endInput.setCustomValidity("Endjahr ungültig");
+          errEnd.textContent = `Endjahr muss zwischen 1700 und ${maxYear} liegen.`;
+        }
+
+        if (Number.isFinite(startYear) && Number.isFinite(endYear) && startYear > endYear) {
+          endInput.setCustomValidity("Endjahr muss >= Startjahr sein");
+          errEnd.textContent = "Endjahr muss >= Startjahr sein.";
+        }
+
+        loadBtn.disabled = !startInput.checkValidity() || !endInput.checkValidity() || selectedMetrics().length === 0;
       }
 
       function metricLabel(key) {
@@ -124,15 +161,18 @@
         const metrics = selectedMetrics();
         if (metrics.length === 0) {
           status.textContent = "Bitte mindestens eine Checkbox auswählen.";
+          validateYears();
+          return;
+        }
+
+        validateYears();
+        if (!startInput.checkValidity() || !endInput.checkValidity()) {
+          status.textContent = "Bitte Zeitraum korrigieren.";
           return;
         }
 
         let startYear = Number(startInput.value);
         let endYear = Number(endInput.value);
-        if (!Number.isFinite(startYear) || !Number.isFinite(endYear)) {
-          status.textContent = "Bitte Startjahr und Endjahr eingeben.";
-          return;
-        }
         ({ startYear, endYear } = clampYears(startYear, endYear));
         startInput.value = String(startYear);
         endInput.value = String(endYear);
@@ -154,6 +194,7 @@
           status.textContent = "Fehler beim Laden: " + (e && e.message ? e.message : String(e));
         } finally {
           loadBtn.disabled = false;
+          validateYears();
         }
       }
 
@@ -194,7 +235,13 @@
       }
 
       loadBtn.addEventListener("click", load);
-      metricEls.forEach((el) => el.addEventListener("change", load));
+      metricEls.forEach((el) => el.addEventListener("change", () => { validateYears(); load(); }));
+      startInput.addEventListener("input", validateYears);
+      endInput.addEventListener("input", validateYears);
+      startInput.addEventListener("blur", validateYears);
+      endInput.addEventListener("blur", validateYears);
+
+      validateYears();
     })();
   </script>
 {% endblock %}

@@ -8,30 +8,36 @@
     Standpunkt eingeben → Stationen im Radius finden → Station auswählen.
   </p>
 
-  <form class="card" method="get" action="/ui/search">
+  <form class="card" method="get" action="/ui/search" id="search-form" novalidate>
     <div class="grid">
       <label>Latitude
-        <input name="lat" type="number" step="any" required value="{{ defaults.lat }}" />
+        <input name="lat" id="lat" type="number" step="any" min="-90" max="90" required value="{{ defaults.lat }}" />
+        <div class="field-error" id="err-lat"></div>
       </label>
       <label>Longitude
-        <input name="lon" type="number" step="any" required value="{{ defaults.lon }}" />
+        <input name="lon" id="lon" type="number" step="any" min="-180" max="180" required value="{{ defaults.lon }}" />
+        <div class="field-error" id="err-lon"></div>
       </label>
       <label>Radius (km)
-        <input name="radius_km" type="number" step="1" required value="{{ defaults.radius_km }}" />
+        <input name="radius_km" id="radius_km" type="number" step="1" min="1" max="2000" required value="{{ defaults.radius_km }}" />
+        <div class="field-error" id="err-radius_km"></div>
       </label>
       <label>Limit
-        <input name="limit" type="number" step="1" required value="{{ defaults.limit }}" />
+        <input name="limit" id="limit" type="number" step="1" min="1" max="200" required value="{{ defaults.limit }}" />
+        <div class="field-error" id="err-limit"></div>
       </label>
       <label>Startjahr (optional)
-        <input name="start_year" type="number" step="1" value="{{ defaults.start_year }}" />
+        <input name="start_year" id="start_year" type="number" step="1" min="1700" max="{{ max_year }}" value="{{ defaults.start_year }}" />
+        <div class="field-error" id="err-start_year"></div>
       </label>
       <label>Endjahr (optional)
-        <input name="end_year" type="number" step="1" value="{{ defaults.end_year }}" />
+        <input name="end_year" id="end_year" type="number" step="1" min="1700" max="{{ max_year }}" value="{{ defaults.end_year }}" />
+        <div class="field-error" id="err-end_year"></div>
       </label>
     </div>
 
     <div class="row">
-      <button type="submit">Suchen</button>
+      <button type="submit" id="search-btn">Suchen</button>
       <span class="muted">Tipp: Import vorher ausführen, sonst ist die DB leer.</span>
     </div>
   </form>
@@ -41,3 +47,102 @@
   </p>
 {% endblock %}
 
+{% block scripts %}
+  <script>
+    (function () {
+      const form = document.getElementById("search-form");
+      const btn = document.getElementById("search-btn");
+      const maxYear = Number("{{ max_year }}");
+
+      const lat = document.getElementById("lat");
+      const lon = document.getElementById("lon");
+      const radius = document.getElementById("radius_km");
+      const limit = document.getElementById("limit");
+      const startYear = document.getElementById("start_year");
+      const endYear = document.getElementById("end_year");
+
+      const err = {
+        lat: document.getElementById("err-lat"),
+        lon: document.getElementById("err-lon"),
+        radius_km: document.getElementById("err-radius_km"),
+        limit: document.getElementById("err-limit"),
+        start_year: document.getElementById("err-start_year"),
+        end_year: document.getElementById("err-end_year"),
+      };
+
+      function setError(input, key, message) {
+        input.setCustomValidity(message || "");
+        err[key].textContent = message || "";
+      }
+
+      function numOrNull(input) {
+        const v = input.value.trim();
+        if (v === "") return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : NaN;
+      }
+
+      function validate() {
+        const latV = numOrNull(lat);
+        const lonV = numOrNull(lon);
+        const radiusV = numOrNull(radius);
+        const limitV = numOrNull(limit);
+        const startV = numOrNull(startYear);
+        const endV = numOrNull(endYear);
+
+        setError(lat, "lat", "");
+        setError(lon, "lon", "");
+        setError(radius, "radius_km", "");
+        setError(limit, "limit", "");
+        setError(startYear, "start_year", "");
+        setError(endYear, "end_year", "");
+
+        if (latV === null || Number.isNaN(latV)) setError(lat, "lat", "Bitte Latitude eingeben.");
+        else if (latV < -90 || latV > 90) setError(lat, "lat", "Latitude muss zwischen -90 und 90 liegen.");
+
+        if (lonV === null || Number.isNaN(lonV)) setError(lon, "lon", "Bitte Longitude eingeben.");
+        else if (lonV < -180 || lonV > 180) setError(lon, "lon", "Longitude muss zwischen -180 und 180 liegen.");
+
+        if (radiusV === null || Number.isNaN(radiusV)) setError(radius, "radius_km", "Bitte Radius eingeben.");
+        else if (!Number.isInteger(radiusV)) setError(radius, "radius_km", "Radius muss eine ganze Zahl sein.");
+        else if (radiusV < 1 || radiusV > 2000) setError(radius, "radius_km", "Radius muss zwischen 1 und 2000 km liegen.");
+
+        if (limitV === null || Number.isNaN(limitV)) setError(limit, "limit", "Bitte Limit eingeben.");
+        else if (!Number.isInteger(limitV)) setError(limit, "limit", "Limit muss eine ganze Zahl sein.");
+        else if (limitV < 1 || limitV > 200) setError(limit, "limit", "Limit muss zwischen 1 und 200 liegen.");
+
+        if (startV !== null) {
+          if (Number.isNaN(startV)) setError(startYear, "start_year", "Startjahr muss eine Zahl sein.");
+          else if (!Number.isInteger(startV)) setError(startYear, "start_year", "Startjahr muss eine ganze Zahl sein.");
+          else if (startV < 1700 || startV > maxYear) setError(startYear, "start_year", `Startjahr muss zwischen 1700 und ${maxYear} liegen.`);
+        }
+        if (endV !== null) {
+          if (Number.isNaN(endV)) setError(endYear, "end_year", "Endjahr muss eine Zahl sein.");
+          else if (!Number.isInteger(endV)) setError(endYear, "end_year", "Endjahr muss eine ganze Zahl sein.");
+          else if (endV < 1700 || endV > maxYear) setError(endYear, "end_year", `Endjahr muss zwischen 1700 und ${maxYear} liegen.`);
+        }
+
+        if (startV !== null && endV !== null && !Number.isNaN(startV) && !Number.isNaN(endV) && startV > endV) {
+          setError(endYear, "end_year", "Endjahr muss >= Startjahr sein.");
+        }
+
+        btn.disabled = !form.checkValidity();
+      }
+
+      [lat, lon, radius, limit, startYear, endYear].forEach((el) => {
+        el.addEventListener("input", validate);
+        el.addEventListener("blur", validate);
+      });
+
+      form.addEventListener("submit", (e) => {
+        validate();
+        if (!form.checkValidity()) {
+          e.preventDefault();
+          form.reportValidity();
+        }
+      });
+
+      validate();
+    })();
+  </script>
+{% endblock %}
