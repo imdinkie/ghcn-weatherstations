@@ -1,5 +1,6 @@
 import datetime as dt
 import json
+from urllib.parse import urlencode
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -437,6 +438,10 @@ def ui_get_station(
     station_id: str,
     start_year: str | None = Query(None),
     end_year: str | None = Query(None),
+    lat: float | None = Query(None),
+    lon: float | None = Query(None),
+    radius_km: float | None = Query(None),
+    limit: int | None = Query(None),
 ):
     station = get_station(station_id)
 
@@ -447,13 +452,32 @@ def ui_get_station(
     if end_year_i is None:
         end_year_i = MAX_YEAR
 
+    back_params: dict[str, object] = {}
+    if lat is not None:
+        back_params["lat"] = lat
+    if lon is not None:
+        back_params["lon"] = lon
+    if radius_km is not None:
+        back_params["radius_km"] = radius_km
+    if limit is not None:
+        back_params["limit"] = limit
+    if start_year not in (None, ""):
+        back_params["start_year"] = start_year
+    if end_year not in (None, ""):
+        back_params["end_year"] = end_year
+
+    back_url = "/" + ("?" + urlencode(back_params) if back_params else "")
+
     return templates.TemplateResponse(
         "station.html",
-        {"request": request,
-         "station": station,
-         "start_year": start_year_i,
-         "end_year": end_year_i,
-         "max_year": MAX_YEAR}
+        {
+            "request": request,
+            "station": station,
+            "start_year": start_year_i,
+            "end_year": end_year_i,
+            "max_year": MAX_YEAR,
+            "back_url": back_url,
+        }
     )
 
 

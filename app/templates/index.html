@@ -37,7 +37,7 @@
             </thead>
             <tbody>
               {% for s in stations %}
-                {% set station_url = "/ui/stations/" ~ s.id ~ "?start_year=" ~ (defaults.start_year if defaults.start_year else "") ~ "&end_year=" ~ (defaults.end_year if defaults.end_year else "") %}
+                {% set station_url = "/ui/stations/" ~ s.id ~ "?lat=" ~ defaults.lat ~ "&lon=" ~ defaults.lon ~ "&radius_km=" ~ defaults.radius_km ~ "&limit=" ~ defaults.limit ~ "&start_year=" ~ (defaults.start_year if defaults.start_year else "") ~ "&end_year=" ~ (defaults.end_year if defaults.end_year else "") %}
                 <tr class="row-link" tabindex="0" role="link" data-href="{{ station_url }}">
                   <td>
                     <div class="strong">{{ s.name }}</div>
@@ -75,7 +75,7 @@
           <div class="field-error" id="err-lon"></div>
         </label>
         <label>Radius (km)
-          <input name="radius_km" id="radius_km" type="number" step="1" min="1" max="2000" required value="{{ defaults.radius_km }}" />
+          <input name="radius_km" id="radius_km" type="number" step="any" min="1" max="2000" required value="{{ defaults.radius_km }}" />
           <div class="field-error" id="err-radius_km"></div>
         </label>
         <label>Limit
@@ -164,7 +164,6 @@
         else if (lonV < -180 || lonV > 180) setError(lon, "lon", "Longitude muss zwischen -180 und 180 liegen.");
 
         if (radiusV === null || Number.isNaN(radiusV)) setError(radius, "radius_km", "Bitte Radius eingeben.");
-        else if (!Number.isInteger(radiusV)) setError(radius, "radius_km", "Radius muss eine ganze Zahl sein.");
         else if (radiusV < 1 || radiusV > 2000) setError(radius, "radius_km", "Radius muss zwischen 1 und 2000 km liegen.");
 
         if (limitV === null || Number.isNaN(limitV)) setError(limit, "limit", "Bitte Limit eingeben.");
@@ -216,6 +215,7 @@
 
       const center = { lat: Number(params.lat), lon: Number(params.lon) };
       const radiusKm = Number(params.radius_km);
+      const limit = Number(params.limit);
       const startYear = params.start_year == null ? "" : String(params.start_year);
       const endYear = params.end_year == null ? "" : String(params.end_year);
 
@@ -252,7 +252,7 @@
         const ll = L.latLng(s.lat, s.lon);
         bounds.extend(ll);
 
-        const url = `/ui/stations/${encodeURIComponent(s.id)}?start_year=${encodeURIComponent(startYear)}&end_year=${encodeURIComponent(endYear)}`;
+        const url = `/ui/stations/${encodeURIComponent(s.id)}?lat=${encodeURIComponent(center.lat)}&lon=${encodeURIComponent(center.lon)}&radius_km=${encodeURIComponent(radiusKm)}&limit=${encodeURIComponent(limit)}&start_year=${encodeURIComponent(startYear)}&end_year=${encodeURIComponent(endYear)}`;
         const popup = `
           <div>
             <div style="font-weight:700">${escapeHtml(s.name)}</div>
