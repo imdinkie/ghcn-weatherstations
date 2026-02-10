@@ -75,11 +75,11 @@
           <div class="field-error" id="err-lon"></div>
         </label>
         <label>Radius (km)
-          <input name="radius_km" id="radius_km" type="number" step="any" min="1" max="2000" required value="{{ defaults.radius_km }}" />
+          <input name="radius_km" id="radius_km" type="number" step="1" min="1" max="100" required value="{{ defaults.radius_km }}" />
           <div class="field-error" id="err-radius_km"></div>
         </label>
         <label>Limit
-          <input name="limit" id="limit" type="number" step="1" min="1" max="200" required value="{{ defaults.limit }}" />
+          <input name="limit" id="limit" type="number" step="1" min="1" max="10" required value="{{ defaults.limit }}" />
           <div class="field-error" id="err-limit"></div>
         </label>
         <label>Startjahr (optional)
@@ -164,11 +164,12 @@
         else if (lonV < -180 || lonV > 180) setError(lon, "lon", "Longitude muss zwischen -180 und 180 liegen.");
 
         if (radiusV === null || Number.isNaN(radiusV)) setError(radius, "radius_km", "Bitte Radius eingeben.");
-        else if (radiusV < 1 || radiusV > 2000) setError(radius, "radius_km", "Radius muss zwischen 1 und 2000 km liegen.");
+        else if (!Number.isInteger(radiusV)) setError(radius, "radius_km", "Radius muss eine ganze Zahl sein.");
+        else if (radiusV < 1 || radiusV > 100) setError(radius, "radius_km", "Radius muss zwischen 1 und 100 km liegen.");
 
         if (limitV === null || Number.isNaN(limitV)) setError(limit, "limit", "Bitte Limit eingeben.");
         else if (!Number.isInteger(limitV)) setError(limit, "limit", "Limit muss eine ganze Zahl sein.");
-        else if (limitV < 1 || limitV > 200) setError(limit, "limit", "Limit muss zwischen 1 und 200 liegen.");
+        else if (limitV < 1 || limitV > 10) setError(limit, "limit", "Limit muss zwischen 1 und 10 liegen.");
 
         if (startV !== null) {
           if (Number.isNaN(startV)) setError(startYear, "start_year", "Startjahr muss eine Zahl sein.");

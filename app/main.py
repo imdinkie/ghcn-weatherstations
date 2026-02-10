@@ -34,7 +34,7 @@ def root(request: Request):
         "lat": 48.062,
         "lon": 8.493,
         "radius_km": 50,
-        "limit": 20,
+        "limit": 10,
         "start_year": "",
         "end_year": "",
     }
@@ -46,14 +46,20 @@ def root(request: Request):
             {"request": request, "max_year": MAX_YEAR, "defaults": defaults, "stations": [], "stations_json": "[]", "params_json": "{}"},
         )
 
-    lat = float(qp.get("lat"))
-    lon = float(qp.get("lon"))
-    radius_km = float(qp.get("radius_km", defaults["radius_km"]))
-    limit = int(qp.get("limit", defaults["limit"]))
-    start_year_s = qp.get("start_year", "")
-    end_year_s = qp.get("end_year", "")
-    start_year_i = None if start_year_s in ("", None) else int(start_year_s)
-    end_year_i = None if end_year_s in ("", None) else int(end_year_s)
+    try:
+        lat = float(qp.get("lat"))
+        lon = float(qp.get("lon"))
+        radius_km = int(qp.get("radius_km", defaults["radius_km"]))
+        limit = int(qp.get("limit", defaults["limit"]))
+        start_year_s = qp.get("start_year", "")
+        end_year_s = qp.get("end_year", "")
+        start_year_i = None if start_year_s in ("", None) else int(start_year_s)
+        end_year_i = None if end_year_s in ("", None) else int(end_year_s)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="lat/lon must be numbers; radius_km/limit/start_year/end_year must be valid numbers",
+        ) from exc
 
     stations = search_stations(
         lat=lat,
@@ -282,7 +288,7 @@ def _bounding_box(lat: float, lon: float, radius_km: float) -> tuple[float, floa
 def search_stations(
     # FastAPI nimmt diese Funktionsparameter automatisch aus der URL als Query-Parameter.
     # Beispiel-Aufruf:
-    #   /search?lat=48.06&lon=8.49&radius_km=50&limit=20&start_year=2000&end_year=2020
+    #   /search?lat=48.06&lon=8.49&radius_km=50&limit=10&start_year=2000&end_year=2020
     #
     # Query(..., ge=..., le=...) ist Validierung:
     # - ge = "greater or equal" (>=)
@@ -291,8 +297,8 @@ def search_stations(
     # Wenn Werte nicht passen, gibt FastAPI automatisch HTTP 422 zurück (validations error).
     lat: float = Query(..., ge=-90.0, le=90.0),
     lon: float = Query(..., ge=-180.0, le=180.0),
-    radius_km: float = Query(50.0, gt=0.0, le=2000.0),
-    limit: int = Query(20, gt=0, le=200),
+    radius_km: int = Query(50, ge=1, le=100),
+    limit: int = Query(10, ge=1, le=10),
     # Letztes mögliches Endjahr ist das aktuelle Vorjahr.
     start_year: int | None = Query(None, ge=1700),
     end_year: int | None = Query(None, ge=1700),
@@ -303,6 +309,10 @@ def search_stations(
     # 3) nach Entfernung sortieren und auf limit begrenzen
 
     # 1) Eingaben prüfen (fachlicher Check, den FastAPI nicht automatisch macht)
+    if radius_km < 1 or radius_km > 100:
+        raise HTTPException(status_code=400, detail="radius_km must be between 1 and 100")
+    if limit < 1 or limit > 10:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 10")
     if start_year is not None and end_year is not None and start_year > end_year:
         raise HTTPException(status_code=400, detail="start_year must be <= end_year")
     if start_year is not None and start_year > MAX_YEAR:
@@ -329,36 +339,37 @@ def search_stations(
     where = ["s.lat BETWEEN %s AND %s", "s.lon BETWEEN %s AND %s"]
     params: list[object] = [min_lat, max_lat, min_lon, max_lon]
 
-    # Filterlogik: Station ist passend, wenn sie den Zeitraum für mindestens eines der Elemente abdeckt:
-    # - entweder TMIN (first<=start und last>=end)
-    # - oder TMAX (first<=start und last>=end)
+    # Filterlogik:
+    # - TMIN UND TMAX müssen beide vorhanden sein
+    # - konsolidierter Start = max(tmin_first_year, tmax_first_year)
+    # - konsolidiertes Ende = min(tmin_last_year, tmax_last_year)
+    # - eine Station ist nur passend, wenn der konsolidierte Zeitraum den angefragten Zeitraum abdeckt
     if start_year is not None and end_year is not None:
         where.append(
             """(
-              (sc.tmin_first_year IS NOT NULL AND sc.tmin_first_year <= %s AND sc.tmin_last_year IS NOT NULL AND sc.tmin_last_year >= %s)
-              OR
-              (sc.tmax_first_year IS NOT NULL AND sc.tmax_first_year <= %s AND sc.tmax_last_year IS NOT NULL AND sc.tmax_last_year >= %s)
+              sc.tmin_first_year IS NOT NULL AND sc.tmin_last_year IS NOT NULL
+              AND sc.tmax_first_year IS NOT NULL AND sc.tmax_last_year IS NOT NULL
+              AND GREATEST(sc.tmin_first_year, sc.tmax_first_year) <= %s
+              AND LEAST(sc.tmin_last_year, sc.tmax_last_year) >= %s
             )"""
         )
-        params.extend([start_year, end_year, start_year, end_year])
+        params.extend([start_year, end_year])
     elif start_year is not None:
         where.append(
             """(
-              (sc.tmin_first_year IS NOT NULL AND sc.tmin_first_year <= %s)
-              OR
-              (sc.tmax_first_year IS NOT NULL AND sc.tmax_first_year <= %s)
+              sc.tmin_first_year IS NOT NULL AND sc.tmax_first_year IS NOT NULL
+              AND GREATEST(sc.tmin_first_year, sc.tmax_first_year) <= %s
             )"""
         )
-        params.extend([start_year, start_year])
+        params.extend([start_year])
     elif end_year is not None:
         where.append(
             """(
-              (sc.tmin_last_year IS NOT NULL AND sc.tmin_last_year >= %s)
-              OR
-              (sc.tmax_last_year IS NOT NULL AND sc.tmax_last_year >= %s)
+              sc.tmin_last_year IS NOT NULL AND sc.tmax_last_year IS NOT NULL
+              AND LEAST(sc.tmin_last_year, sc.tmax_last_year) >= %s
             )"""
         )
-        params.extend([end_year, end_year])
+        params.extend([end_year])
 
     # `sql` ist ein f-string, aber:
     # - Wir fügen damit nur unsere fest definierten WHERE-Teile zusammen
@@ -440,7 +451,7 @@ def ui_get_station(
     end_year: str | None = Query(None),
     lat: float | None = Query(None),
     lon: float | None = Query(None),
-    radius_km: float | None = Query(None),
+    radius_km: int | None = Query(None),
     limit: int | None = Query(None),
 ):
     station = get_station(station_id)

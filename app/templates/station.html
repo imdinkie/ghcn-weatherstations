@@ -103,10 +103,24 @@
 
       const tableHead = document.querySelector("#table thead");
       const tableBody = document.querySelector("#table tbody");
+      const allMetrics = [
+        "tmin_year",
+        "tmax_year",
+        "tmin_spring",
+        "tmax_spring",
+        "tmin_summer",
+        "tmax_summer",
+        "tmin_autumn",
+        "tmax_autumn",
+        "tmin_winter",
+        "tmax_winter",
+      ];
 
       let chart = null;
       let pendingTimer = null;
       let loading = false;
+      let latestSeries = [];
+      let latestYears = [];
 
       function selectedMetrics() {
         return metricEls.filter((el) => el.checked).map((el) => el.value);
@@ -177,13 +191,11 @@
 
       async function load() {
         if (loading) return;
-        const metrics = selectedMetrics();
-        if (metrics.length === 0) {
-          status.textContent = "Bitte mindestens eine Checkbox auswählen.";
+        if (selectedMetrics().length === 0) {
+          status.textContent = "Bitte mindestens eine Reihe auswählen.";
           validateYears();
           return;
         }
-
         validateYears();
         if (!startInput.checkValidity() || !endInput.checkValidity()) {
           status.textContent = "Bitte Zeitraum korrigieren.";
@@ -201,6 +213,7 @@
         loading = true;
 
         try {
+          const metrics = allMetrics;
           const url = `/api/stations/${encodeURIComponent(stationId)}/series?start_year=${startYear}&end_year=${endYear}&metrics=${encodeURIComponent(metrics.join(","))}`;
           const res = await fetch(url);
           if (!res.ok) {
@@ -222,20 +235,50 @@
       function render(series, startYear, endYear) {
         const years = [];
         for (let y = startYear; y <= endYear; y++) years.push(y);
+        latestSeries = series;
+        latestYears = years;
 
         const datasets = series.map((s) => ({
           label: metricLabel(s.key),
           data: s.points.map((p) => (p.value_c == null ? null : Number(p.value_c))),
+          hidden: !selectedMetrics().includes(s.key),
           spanGaps: false,
         }));
 
         if (chart) chart.destroy();
+        const defaultLegendClick = Chart.defaults.plugins.legend.onClick;
         chart = new Chart(document.getElementById("chart"), {
           type: "line",
           data: { labels: years, datasets },
-          options: { plugins: { legend: { position: "bottom" } } },
+          options: {
+            plugins: {
+              legend: {
+                position: "bottom",
+                onClick(evt, legendItem, legend) {
+                  defaultLegendClick(evt, legendItem, legend);
+                  syncCheckboxesFromChart();
+                  renderTable();
+                },
+              },
+            },
+          },
         });
+        syncCheckboxesFromChart();
+        renderTable();
+      }
 
+      function visibleSeries() {
+        if (!chart) return [];
+        const out = [];
+        for (let i = 0; i < latestSeries.length; i++) {
+          if (chart.isDatasetVisible(i)) out.push(latestSeries[i]);
+        }
+        return out;
+      }
+
+      function renderTable() {
+        const series = visibleSeries();
+        const years = latestYears;
         tableHead.innerHTML = "";
         tableBody.innerHTML = "";
 
@@ -255,8 +298,35 @@
         }
       }
 
+      function syncCheckboxesFromChart() {
+        if (!chart) return;
+        for (const el of metricEls) {
+          const index = allMetrics.indexOf(el.value);
+          if (index === -1) continue;
+          el.checked = chart.isDatasetVisible(index);
+        }
+        validateYears();
+      }
+
+      function syncChartFromCheckboxes() {
+        if (!chart) return;
+        const selected = new Set(selectedMetrics());
+        for (let i = 0; i < allMetrics.length; i++) {
+          const shouldShow = selected.has(allMetrics[i]);
+          const isVisible = chart.isDatasetVisible(i);
+          if (shouldShow !== isVisible) {
+            if (shouldShow) chart.show(i);
+            else chart.hide(i);
+          }
+        }
+        renderTable();
+      }
+
       loadBtn.addEventListener("click", load);
-      metricEls.forEach((el) => el.addEventListener("change", () => { validateYears(); load(); }));
+      metricEls.forEach((el) => el.addEventListener("change", () => {
+        validateYears();
+        if (chart) syncChartFromCheckboxes();
+      }));
       startInput.addEventListener("input", scheduleLoad);
       endInput.addEventListener("input", scheduleLoad);
       startInput.addEventListener("blur", scheduleLoad);
