@@ -1,68 +1,94 @@
 # GHCN Weatherstations
 
-## Lokales Setup
-
-### 1) Python-Umgebung
+## Schnellstart (One-command)
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt -r requirements-dev.txt
+docker compose up --build
 ```
 
-### 2) Datenbank starten
+Danach erreichbar unter:
+
+- App: `http://localhost:8000`
+- API Docs: `http://localhost:8000/docs`
+
+Beim Start macht der App-Container automatisch:
+
+1. auf die Datenbank warten
+2. Metadaten laden (falls `data/stations.txt` oder `data/inventory.txt` fehlen)
+3. Metadaten in Postgres importieren
+4. FastAPI starten
+
+## Optional: Adminer (DB-UI)
+
+Adminer ist ein separates Debug-Tool für die Datenbank und läuft daher auf einem eigenen Port.
+
+Start:
+
+```bash
+docker compose --profile debug up -d adminer
+```
+
+Zugriff:
+
+- Adminer: `http://localhost:8080`
+
+Hinweis:
+
+- Port `8000` = App
+- Port `8080` = Adminer
+
+## Optionale Konfiguration per `.env`
+
+Für den reinen Compose-Start ist keine `.env` zwingend nötig, da `docker-compose.yml` Defaults enthält.
+
+Wenn du Defaults überschreiben willst:
+
+```bash
+cp .env.example .env
+```
+
+Beispiele für Override-Werte:
+
+- `POSTGRES_USER`
+- `POSTGRES_PASSWORD`
+- `POSTGRES_DB`
+- `POSTGRES_PORT`
+- `APP_PORT`
+
+## Lokale Entwicklung ohne App-Container
+
+DB im Container, App lokal:
 
 ```bash
 docker compose up -d db
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
+uvicorn app.main:app --reload --env-file .env
 ```
 
-Die App nutzt `DATABASE_URL` aus `.env`, z. B.:
+Wichtig: Beim lokalen App-Start muss `DATABASE_URL` auf `localhost` zeigen, z. B.:
 
 ```env
 DATABASE_URL=postgresql://user:example@localhost:5432/weatherstations
 ```
 
-### 3) App starten
-
-```bash
-uvicorn app.main:app --reload --env-file .env
-```
-
 ## Tests
 
-### Teststrategie
-
-- Unit-Tests: Parser/Mathematik/Fachlogik auf Funktionsebene
-- Integrations-Tests: API-Endpunkte gegen echte Postgres-DB
-- Systemtests: dokumentierte manuelle Prüfungen mit Referenzfällen
-
-### Testlauf lokal
-
 ```bash
+source .venv/bin/activate
 pytest
 ```
 
-Standardmäßig werden Coverage-Reports erzeugt:
-
-- Terminal-Ausgabe (`term-missing`)
-- `coverage.xml`
-
-### Hinweise
-
-- Für Tests muss `DATABASE_URL` gesetzt sein.
-- Tests bereinigen die Tabellen `stations`, `station_coverage`, `station_metric_cache` vor jedem Testlauf.
+- Unit-Tests: Parser/Mathematik/Fachlogik
+- Integrations-Tests: API gegen echte Postgres-DB
+- Coverage: Terminal + `coverage.xml`
 
 ## CI
 
-GitHub Actions Workflow: `.github/workflows/ci.yml`
+Workflow: `.github/workflows/ci.yml`
 
-Enthalten:
-
-- Postgres-Service
-- Installation von Runtime- und Dev-Dependencies
-- `pytest` mit Coverage
-- Upload von `coverage.xml` als Artefakt
-
-## Hinweise zu Lighthouse
-
-Lighthouse (Performance + Accessibility) ist als separater Qualitätsnachweis geplant und wird im nächsten Schritt ergänzt.
+- startet Postgres-Service
+- installiert Dependencies
+- führt `pytest` mit Coverage aus
+- lädt `coverage.xml` als Artefakt hoch
