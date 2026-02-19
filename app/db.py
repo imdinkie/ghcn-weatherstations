@@ -47,6 +47,9 @@ def ensure_schema() -> None:
 
                 CREATE INDEX IF NOT EXISTS idx_station_metric_cache_lookup
                   ON station_metric_cache (station_id, sha256, year, metric);
+
+                CREATE INDEX IF NOT EXISTS idx_stations_lat_lon
+                  ON stations (lat, lon);
                 """
             )
         conn.commit()
