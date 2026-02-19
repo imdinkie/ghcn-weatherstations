@@ -509,17 +509,15 @@ def api_station_series(
     if not requested or any(m not in set(ALL_METRICS) for m in requested):
         raise HTTPException(status_code=400, detail="invalid metrics")
 
-    dly_path, sha = ensure_station_dly(station_id)
+    dly_path = ensure_station_dly(station_id)
     ensure_cached_metrics(
         station_id=station_id,
-        sha256=sha,
         dly_path=dly_path,
         start_year=start_year,
         end_year=end_year,
     )
     series_out = load_cached_series(
         station_id=station_id,
-        sha256=sha,
         start_year=start_year,
         end_year=end_year,
         metrics=requested,

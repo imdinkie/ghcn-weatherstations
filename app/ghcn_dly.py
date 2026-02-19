@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import calendar
-import hashlib
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,28 +33,14 @@ def dly_url(station_id: str) -> str:
     return f"https://noaa-ghcn-pds.s3.amazonaws.com/ghcnd_all/{station_id}.dly"
 
 
-def sha256_bytes(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
-
-
-def sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def ensure_station_dly(station_id: str) -> tuple[Path, str]:
+def ensure_station_dly(station_id: str) -> Path:
     """
     Stellt sicher, dass `data/dly/{station_id}.dly` existiert.
-    Gibt (Pfad, sha256) zurück.
+    Gibt den lokalen Dateipfad zurück.
     """
     dly_path = _dly_dir() / f"{station_id}.dly"
-    sha_path = dly_path.with_suffix(".sha256")
-
-    if dly_path.exists() and sha_path.exists():
-        return dly_path, sha_path.read_text(encoding="utf-8").strip()
+    if dly_path.exists():
+        return dly_path
 
     if not dly_path.exists():
         r = requests.get(dly_url(station_id), timeout=180)
@@ -66,9 +51,7 @@ def ensure_station_dly(station_id: str) -> tuple[Path, str]:
         tmp.write_bytes(r.content)
         tmp.replace(dly_path)
 
-    sha = sha256_file(dly_path)
-    sha_path.write_text(sha + "\n", encoding="utf-8")
-    return dly_path, sha
+    return dly_path
 
 
 def _season_key(year: int, month: int) -> tuple[int, str] | None:
