@@ -37,16 +37,12 @@ def ensure_schema() -> None:
                   station_id TEXT NOT NULL references stations(id),
                   metric TEXT NOT NULL,
                   year INTEGER NOT NULL,
-                  sha256 TEXT NOT NULL,
                   value_c DOUBLE PRECISION,
                   present_days INTEGER NOT NULL,
                   expected_days INTEGER NOT NULL,
                   computed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                   PRIMARY KEY (station_id, metric, year)
                 );
-
-                CREATE INDEX IF NOT EXISTS idx_station_metric_cache_lookup
-                  ON station_metric_cache (station_id, sha256, year, metric);
 
                 CREATE INDEX IF NOT EXISTS idx_stations_lat_lon
                   ON stations (lat, lon);

@@ -96,10 +96,9 @@ def ensure_cached_metrics(
                         cur.execute(
                             """
                             INSERT INTO station_metric_cache
-                              (station_id, metric, year, sha256, value_c, present_days, expected_days)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                              (station_id, metric, year, value_c, present_days, expected_days)
+                            VALUES (%s, %s, %s, %s, %s, %s)
                             ON CONFLICT (station_id, metric, year) DO UPDATE SET
-                              sha256 = EXCLUDED.sha256,
                               value_c = EXCLUDED.value_c,
                               present_days = EXCLUDED.present_days,
                               expected_days = EXCLUDED.expected_days,
@@ -109,7 +108,6 @@ def ensure_cached_metrics(
                                 station_id,
                                 metric,
                                 p.year,
-                                "disabled",
                                 p.value_c,
                                 p.present_days,
                                 p.expected_days,
