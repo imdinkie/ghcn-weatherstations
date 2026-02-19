@@ -1,5 +1,7 @@
 import datetime as dt
 import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from urllib.parse import urlencode
 from pathlib import Path
 
@@ -11,15 +13,16 @@ from app.db import connect, ensure_schema
 from app.ghcn_dly import ensure_station_dly
 from fastapi.templating import Jinja2Templates
 
-app = FastAPI(title="GHCN Weatherstations (Learning API)")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    ensure_schema()
+    yield
+
+app = FastAPI(title="GHCN Weatherstations (Learning API)", lifespan=lifespan)
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
-
-
-@app.on_event("startup")
-def _startup() -> None:
-    ensure_schema()
 
 
 MAX_YEAR = dt.date.today().year - 1
