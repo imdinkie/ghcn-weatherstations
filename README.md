@@ -91,4 +91,23 @@ Workflow: `.github/workflows/ci.yml`
 - startet Postgres-Service
 - installiert Dependencies
 - führt `pytest` mit Coverage aus
+- führt einen Container-Smoke-Test (`docker compose up` + `/health`) aus
 - lädt `coverage.xml` als Artefakt hoch
+
+## Lighthouse (manuell)
+
+Reproduzierbarer Lauf mit Hilfsskript:
+
+```bash
+scripts/run_lighthouse.sh <STATION_ID>
+```
+
+Beispiel:
+
+```bash
+scripts/run_lighthouse.sh GME00121330
+```
+
+Details, Scope und Dokumentationsanforderungen:
+
+- `docs/lighthouse-manual.md`

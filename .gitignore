@@ -6,5 +6,6 @@ data/
 .pytest_cache/
 .coverage
 coverage.xml
+artifacts/lighthouse/
 
 documents/
