@@ -49,3 +49,34 @@ jobs:
         with:
           name: coverage-xml
           path: coverage.xml
+
+  container-smoke:
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate compose file
+        run: docker compose config
+
+      - name: Build and start app stack
+        run: docker compose up -d --build db app
+
+      - name: Wait for health endpoint
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8000/health; then
+              echo
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Health endpoint did not become ready in time."
+          docker compose logs --no-color app db
+          exit 1
+
+      - name: Shutdown stack
+        if: always()
+        run: docker compose down -v
