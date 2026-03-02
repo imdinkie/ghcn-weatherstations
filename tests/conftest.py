@@ -25,7 +25,7 @@ def _ensure_database_url_from_env_file() -> None:
             return
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def ensure_test_database() -> Iterator[None]:
     # Session-weit einmalig:
     # 1) DATABASE_URL sicherstellen
@@ -39,7 +39,7 @@ def ensure_test_database() -> Iterator[None]:
     yield
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture()
 def clean_tables(ensure_test_database: None) -> Iterator[None]:
     # Vor jedem Test: harte Isolation durch TRUNCATE.
     # So beeinflussen sich Testfälle nicht gegenseitig über Restdaten.
@@ -59,14 +59,14 @@ def clean_tables(ensure_test_database: None) -> Iterator[None]:
 
 
 @pytest.fixture()
-def client(ensure_test_database: None) -> Iterator[TestClient]:
+def client(clean_tables: None) -> Iterator[TestClient]:
     # FastAPI TestClient für HTTP-Integrationstests.
     with TestClient(app) as c:
         yield c
 
 
 @pytest.fixture()
-def seed_station() -> Callable[..., None]:
+def seed_station(clean_tables: None) -> Callable[..., None]:
     # Hilfsfixture, um Stationen + optionale Coverage kompakt zu seeden.
     # Dadurch bleibt Testcode fokussiert auf Assertions statt Setup-Noise.
     def _seed(
