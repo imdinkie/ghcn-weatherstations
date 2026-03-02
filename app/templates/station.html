@@ -10,7 +10,10 @@
   <div class="layout">
     <section class="main">
       <h1 class="page-title">{{ station.name }}</h1>
-      <p class="muted page-subtitle">{{ station.id }} · {{ '%.4f'|format(station.lat) }}, {{ '%.4f'|format(station.lon) }}</p>
+      <p class="muted page-subtitle">
+        {{ station.id }} · {{ ('%.4f'|format(station.lat)).replace('.', ',') }} / {{ ('%.4f'|format(station.lon)).replace('.', ',') }}
+        · Jahre (TMIN/TMAX): {{ coverage_first_year if coverage_first_year else '—' }}–{{ coverage_last_year if coverage_last_year else '—' }}
+      </p>
 
       <div class="card">
         <div id="status" class="muted">Lade Daten…</div>
@@ -55,22 +58,22 @@
           </thead>
           <tbody>
             <tr>
-              <th>Year</th>
+              <th>Jahr</th>
               <td><input type="checkbox" class="metric" value="tmin_year" checked /></td>
               <td><input type="checkbox" class="metric" value="tmax_year" checked /></td>
             </tr>
             <tr>
-              <th>Spring</th>
+              <th>Frühling</th>
               <td><input type="checkbox" class="metric" value="tmin_spring" /></td>
               <td><input type="checkbox" class="metric" value="tmax_spring" /></td>
             </tr>
             <tr>
-              <th>Summer</th>
+              <th>Sommer</th>
               <td><input type="checkbox" class="metric" value="tmin_summer" /></td>
               <td><input type="checkbox" class="metric" value="tmax_summer" /></td>
             </tr>
             <tr>
-              <th>Autumn</th>
+              <th>Herbst</th>
               <td><input type="checkbox" class="metric" value="tmin_autumn" /></td>
               <td><input type="checkbox" class="metric" value="tmax_autumn" /></td>
             </tr>
@@ -175,18 +178,34 @@
 
       function metricLabel(key) {
         const map = {
-          tmin_year: "TMIN Year",
-          tmax_year: "TMAX Year",
-          tmin_spring: "TMIN Spring",
-          tmax_spring: "TMAX Spring",
-          tmin_summer: "TMIN Summer",
-          tmax_summer: "TMAX Summer",
-          tmin_autumn: "TMIN Autumn",
-          tmax_autumn: "TMAX Autumn",
+          tmin_year: "TMIN Jahr",
+          tmax_year: "TMAX Jahr",
+          tmin_spring: "TMIN Frühling",
+          tmax_spring: "TMAX Frühling",
+          tmin_summer: "TMIN Sommer",
+          tmax_summer: "TMAX Sommer",
+          tmin_autumn: "TMIN Herbst",
+          tmax_autumn: "TMAX Herbst",
           tmin_winter: "TMIN Winter",
           tmax_winter: "TMAX Winter",
         };
         return map[key] || key;
+      }
+
+      function metricStyle(key) {
+        const map = {
+          tmin_year: { borderColor: "#0000ff", backgroundColor: "rgba(0,0,255,0.12)" },
+          tmax_year: { borderColor: "#ff0000", backgroundColor: "rgba(255,0,0,0.12)" },
+          tmin_spring: { borderColor: "#166534", backgroundColor: "rgba(22,101,52,0.12)" },
+          tmax_spring: { borderColor: "#22c55e", backgroundColor: "rgba(34,197,94,0.12)" },
+          tmin_summer: { borderColor: "#ca8a04", backgroundColor: "rgba(202,138,4,0.12)" },
+          tmax_summer: { borderColor: "#facc15", backgroundColor: "rgba(250,204,21,0.16)" },
+          tmin_autumn: { borderColor: "#92400e", backgroundColor: "rgba(146,64,14,0.12)" },
+          tmax_autumn: { borderColor: "#b45309", backgroundColor: "rgba(180,83,9,0.12)" },
+          tmin_winter: { borderColor: "#4b5563", backgroundColor: "rgba(75,85,99,0.12)" },
+          tmax_winter: { borderColor: "#9ca3af", backgroundColor: "rgba(156,163,175,0.15)" },
+        };
+        return map[key] || { borderColor: "#0f172a", backgroundColor: "rgba(15,23,42,0.1)" };
       }
 
       async function load() {
@@ -240,9 +259,16 @@
 
         const datasets = series.map((s) => ({
           label: metricLabel(s.key),
-          data: s.points.map((p) => (p.value_c == null ? null : Number(p.value_c))),
+          data: s.points.map((p) => (p.value_c == null ? null : Number(Number(p.value_c).toFixed(1)))),
           hidden: !selectedMetrics().includes(s.key),
           spanGaps: false,
+          ...metricStyle(s.key),
+          borderWidth: 2,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          pointHitRadius: 8,
+          pointBorderWidth: 1,
+          tension: 0.15,
         }));
 
         if (chart) chart.destroy();
@@ -258,6 +284,14 @@
                   defaultLegendClick(evt, legendItem, legend);
                   syncCheckboxesFromChart();
                   renderTable();
+                },
+              },
+              tooltip: {
+                callbacks: {
+                  label(ctx) {
+                    if (ctx.raw == null) return `${ctx.dataset.label}: —`;
+                    return `${ctx.dataset.label}: ${Number(ctx.raw).toFixed(1).replace(".", ",")} °C`;
+                  },
                 },
               },
             },
@@ -291,7 +325,7 @@
           const cells = [`<td>${years[i]}</td>`];
           for (const s of series) {
             const p = s.points[i];
-            cells.push(`<td>${p.value_c == null ? "—" : Number(p.value_c).toFixed(2)}</td>`);
+            cells.push(`<td>${p.value_c == null ? "—" : Number(p.value_c).toFixed(1).replace(".", ",")}</td>`);
           }
           tr.innerHTML = cells.join("");
           tableBody.appendChild(tr);

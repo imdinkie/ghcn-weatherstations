@@ -42,6 +42,8 @@ def test_search_sorted_and_limited(client, seed_station) -> None:
     assert payload[0]["id"] == "A0000000001"
     assert payload[1]["id"] == "B0000000001"
     assert payload[0]["dist_km"] <= payload[1]["dist_km"]
+    assert payload[0]["coverage_first_year"] == 1990
+    assert payload[0]["coverage_last_year"] == 2025
 
 
 def test_search_rejects_invalid_year_range(client) -> None:

@@ -96,12 +96,12 @@ def ensure_cached_metrics(
                         cur.execute(
                             """
                             INSERT INTO station_metric_cache
-                              (station_id, metric, year, value_c, present_days, expected_days)
+                              (station_id, metric, year, value_c, present_months, expected_months)
                             VALUES (%s, %s, %s, %s, %s, %s)
                             ON CONFLICT (station_id, metric, year) DO UPDATE SET
                               value_c = EXCLUDED.value_c,
-                              present_days = EXCLUDED.present_days,
-                              expected_days = EXCLUDED.expected_days,
+                              present_months = EXCLUDED.present_months,
+                              expected_months = EXCLUDED.expected_months,
                               computed_at = now()
                             """,
                             (
@@ -109,8 +109,8 @@ def ensure_cached_metrics(
                                 metric,
                                 p.year,
                                 p.value_c,
-                                p.present_days,
-                                p.expected_days,
+                                p.present_months,
+                                p.expected_months,
                             ),
                         )
             # 6) Alle Änderungen atomar committen.
@@ -130,13 +130,16 @@ def load_cached_series(
 ) -> list[dict]:
     by_metric: dict[str, dict[int, dict]] = {m: {} for m in metrics}
 
+    def expected_months_for_metric(metric: str) -> int:
+        return 12 if metric.endswith("_year") else 3
+
     # Die Metrics-Liste ist dynamisch; dafür bauen wir die passende Anzahl Platzhalter.
     placeholders = ", ".join(["%s"] * len(metrics))
     with connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 f"""
-                SELECT metric, year, value_c, present_days, expected_days
+                SELECT metric, year, value_c, present_months, expected_months
                 FROM station_metric_cache
                 WHERE station_id=%s AND year BETWEEN %s AND %s
                   AND metric IN ({placeholders})
@@ -146,12 +149,12 @@ def load_cached_series(
             )
             # Ergebnis zunächst als Dict strukturieren:
             # by_metric[metric][year] -> Punktdaten
-            for metric, year, value_c, present_days, expected_days in cur.fetchall():
+            for metric, year, value_c, present_months, expected_months in cur.fetchall():
                 by_metric[metric][year] = {
                     "year": year,
                     "value_c": value_c,
-                    "present_days": present_days,
-                    "expected_days": expected_days,
+                    "present_months": present_months,
+                    "expected_months": expected_months,
                 }
 
     out: list[dict] = []
@@ -160,6 +163,16 @@ def load_cached_series(
         for y in range(start_year, end_year + 1):
             # Fehlende Jahre im Cache werden explizit als leere Punkte ergänzt,
             # damit Frontend immer eine lückenlose Jahr-Achse erhält.
-            points.append(by_metric[metric].get(y, {"year": y, "value_c": None, "present_days": 0, "expected_days": 0}))
+            points.append(
+                by_metric[metric].get(
+                    y,
+                    {
+                        "year": y,
+                        "value_c": None,
+                        "present_months": 0,
+                        "expected_months": expected_months_for_metric(metric),
+                    },
+                )
+            )
         out.append({"key": metric, "points": points})
     return out

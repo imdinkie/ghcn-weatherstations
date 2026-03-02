@@ -28,6 +28,51 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 MAX_YEAR = dt.date.today().year - 1
 
 
+def _parse_decimal(value: str | None) -> float:
+    if value is None:
+        raise ValueError("value is required")
+    return float(value.strip().replace(",", "."))
+
+
+def _format_decimal_de(value: float, decimals: int = 4) -> str:
+    return f"{value:.{decimals}f}".replace(".", ",")
+
+
+def _station_consolidated_coverage(station_id: str) -> tuple[int | None, int | None]:
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                  CASE
+                    WHEN tmin_first_year IS NOT NULL
+                     AND tmax_first_year IS NOT NULL
+                     AND tmin_last_year IS NOT NULL
+                     AND tmax_last_year IS NOT NULL
+                     AND GREATEST(tmin_first_year, tmax_first_year) <= LEAST(tmin_last_year, tmax_last_year)
+                    THEN GREATEST(tmin_first_year, tmax_first_year)
+                    ELSE NULL
+                  END,
+                  CASE
+                    WHEN tmin_first_year IS NOT NULL
+                     AND tmax_first_year IS NOT NULL
+                     AND tmin_last_year IS NOT NULL
+                     AND tmax_last_year IS NOT NULL
+                     AND GREATEST(tmin_first_year, tmax_first_year) <= LEAST(tmin_last_year, tmax_last_year)
+                    THEN LEAST(tmin_last_year, tmax_last_year)
+                    ELSE NULL
+                  END
+                FROM station_coverage
+                WHERE id = %s
+                """,
+                (station_id,),
+            )
+            row = cur.fetchone()
+    if row is None:
+        return None, None
+    return row[0], row[1]
+
+
 @app.get("/")
 def root(request: Request):
     # Startseite: Suchformular + (optional) Suchergebnisse auf derselben Seite.
@@ -36,6 +81,8 @@ def root(request: Request):
     defaults = {
         "lat": 48.062,
         "lon": 8.493,
+        "lat_input": "48,0620",
+        "lon_input": "8,4930",
         "radius_km": 50,
         "limit": 10,
         "start_year": "",
@@ -50,8 +97,8 @@ def root(request: Request):
         )
 
     try:
-        lat = float(qp.get("lat"))
-        lon = float(qp.get("lon"))
+        lat = _parse_decimal(qp.get("lat"))
+        lon = _parse_decimal(qp.get("lon"))
         radius_km = int(qp.get("radius_km", defaults["radius_km"]))
         limit = int(qp.get("limit", defaults["limit"]))
         start_year_s = qp.get("start_year", "")
@@ -81,6 +128,8 @@ def root(request: Request):
             "defaults": {
                 "lat": lat,
                 "lon": lon,
+                "lat_input": _format_decimal_de(lat),
+                "lon_input": _format_decimal_de(lon),
                 "radius_km": radius_km,
                 "limit": limit,
                 "start_year": start_year_s,
@@ -88,7 +137,18 @@ def root(request: Request):
             },
             "stations": stations,
             "stations_json": json.dumps(
-                [{"id": s.id, "name": s.name, "lat": s.lat, "lon": s.lon, "dist_km": s.dist_km} for s in stations]
+                [
+                    {
+                        "id": s.id,
+                        "name": s.name,
+                        "lat": s.lat,
+                        "lon": s.lon,
+                        "dist_km": s.dist_km,
+                        "coverage_first_year": s.coverage_first_year,
+                        "coverage_last_year": s.coverage_last_year,
+                    }
+                    for s in stations
+                ]
             ),
             "params_json": json.dumps(
                 {
@@ -206,11 +266,9 @@ class StationSearchOut(StationOut):
     # Entfernung zum Standpunkt (in km) – damit du die "nächsten Stationen" sortieren kannst.
     dist_km: float
 
-    # Coverage-Infos sind praktisch, um die Start/Endjahr-Filter zu debuggen/anzeigen.
-    tmin_first_year: int | None = None
-    tmin_last_year: int | None = None
-    tmax_first_year: int | None = None
-    tmax_last_year: int | None = None
+    # Konsolidierte Coverage-Schnittmenge von TMIN/TMAX.
+    coverage_first_year: int | None = None
+    coverage_last_year: int | None = None
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -381,7 +439,16 @@ def search_stations(
     sql = f"""
         SELECT
           s.id, s.name, s.lat, s.lon, s.elev_m, s.state,
-          sc.tmin_first_year, sc.tmin_last_year, sc.tmax_first_year, sc.tmax_last_year
+          CASE
+            WHEN sc.tmin_first_year IS NOT NULL AND sc.tmax_first_year IS NOT NULL
+            THEN GREATEST(sc.tmin_first_year, sc.tmax_first_year)
+            ELSE NULL
+          END AS coverage_first_year,
+          CASE
+            WHEN sc.tmin_last_year IS NOT NULL AND sc.tmax_last_year IS NOT NULL
+            THEN LEAST(sc.tmin_last_year, sc.tmax_last_year)
+            ELSE NULL
+          END AS coverage_last_year
         FROM stations s
         -- LEFT JOIN: auch wenn Coverage fehlt, könnten Stationen erscheinen.
         -- In unserem Fall filtern wir bei start_year/end_year aber auf IS NOT NULL,
@@ -416,13 +483,20 @@ def search_stations(
                 # 3 lon
                 # 4 elev_m
                 # 5 state
-                # 6 tmin_first_year
-                # 7 tmin_last_year
-                # 8 tmax_first_year
-                # 9 tmax_last_year
+                # 6 coverage_first_year
+                # 7 coverage_last_year
                 dist = _haversine_km(lat, lon, row[2], row[3])
                 if dist > radius_km:
                     continue
+                coverage_first_year = row[6]
+                coverage_last_year = row[7]
+                if (
+                    coverage_first_year is not None
+                    and coverage_last_year is not None
+                    and coverage_first_year > coverage_last_year
+                ):
+                    coverage_first_year = None
+                    coverage_last_year = None
                 candidates.append(
                     StationSearchOut(
                         id=row[0],
@@ -432,10 +506,8 @@ def search_stations(
                         elev_m=row[4],
                         state=row[5],
                         dist_km=dist,
-                        tmin_first_year=row[6],
-                        tmin_last_year=row[7],
-                        tmax_first_year=row[8],
-                        tmax_last_year=row[9],
+                        coverage_first_year=coverage_first_year,
+                        coverage_last_year=coverage_last_year,
                     )
                 )
 
@@ -458,6 +530,7 @@ def ui_get_station(
     limit: int | None = Query(None),
 ):
     station = get_station(station_id)
+    coverage_first_year, coverage_last_year = _station_consolidated_coverage(station_id)
 
     start_year_i = None if start_year in (None, "") else int(start_year)
     end_year_i = None if end_year in (None, "") else int(end_year)
@@ -489,6 +562,8 @@ def ui_get_station(
             "station": station,
             "start_year": start_year_i,
             "end_year": end_year_i,
+            "coverage_first_year": coverage_first_year,
+            "coverage_last_year": coverage_last_year,
             "max_year": MAX_YEAR,
             "back_url": back_url,
         }

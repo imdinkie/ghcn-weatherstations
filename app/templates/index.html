@@ -31,8 +31,7 @@
               <tr>
                 <th>Station</th>
                 <th>Distanz</th>
-                <th>TMIN Jahre</th>
-                <th>TMAX Jahre</th>
+                <th>Jahre (TMIN/TMAX)</th>
               </tr>
             </thead>
             <tbody>
@@ -41,11 +40,10 @@
                 <tr class="row-link" tabindex="0" role="link" data-href="{{ station_url }}">
                   <td>
                     <div class="strong">{{ s.name }}</div>
-                    <div class="muted">{{ s.id }} · {{ '%.4f'|format(s.lat) }}, {{ '%.4f'|format(s.lon) }}</div>
+                    <div class="muted">{{ s.id }} · {{ ('%.4f'|format(s.lat)).replace('.', ',') }} / {{ ('%.4f'|format(s.lon)).replace('.', ',') }}</div>
                   </td>
-                  <td>{{ '%.1f'|format(s.dist_km) }} km</td>
-                  <td>{{ s.tmin_first_year if s.tmin_first_year else '—' }}–{{ s.tmin_last_year if s.tmin_last_year else '—' }}</td>
-                  <td>{{ s.tmax_first_year if s.tmax_first_year else '—' }}–{{ s.tmax_last_year if s.tmax_last_year else '—' }}</td>
+                  <td>{{ ('%.1f'|format(s.dist_km)).replace('.', ',') }} km</td>
+                  <td>{{ s.coverage_first_year if s.coverage_first_year else '—' }}–{{ s.coverage_last_year if s.coverage_last_year else '—' }}</td>
                 </tr>
               {% endfor %}
             </tbody>
@@ -66,20 +64,20 @@
 
     <aside class="sidebar">
       <form class="card" method="get" action="/" id="search-form" novalidate>
-        <label>Latitude
-          <input name="lat" id="lat" type="number" step="any" min="-90" max="90" required value="{{ defaults.lat }}" />
+        <label>Breitengrad
+          <input name="lat" id="lat" type="text" inputmode="decimal" required value="{{ defaults.lat_input }}" />
           <div class="field-error" id="err-lat"></div>
         </label>
-        <label>Longitude
-          <input name="lon" id="lon" type="number" step="any" min="-180" max="180" required value="{{ defaults.lon }}" />
+        <label>Längengrad
+          <input name="lon" id="lon" type="text" inputmode="decimal" required value="{{ defaults.lon_input }}" />
           <div class="field-error" id="err-lon"></div>
         </label>
         <label>Radius (km)
-          <input name="radius_km" id="radius_km" type="number" step="1" min="1" max="100" required value="{{ defaults.radius_km }}" />
+          <input name="radius_km" id="radius_km" type="text" inputmode="numeric" pattern="[0-9]*" required value="{{ defaults.radius_km }}" />
           <div class="field-error" id="err-radius_km"></div>
         </label>
         <label>Limit
-          <input name="limit" id="limit" type="number" step="1" min="1" max="10" required value="{{ defaults.limit }}" />
+          <input name="limit" id="limit" type="text" inputmode="numeric" pattern="[0-9]*" required value="{{ defaults.limit }}" />
           <div class="field-error" id="err-limit"></div>
         </label>
         <label>Startjahr (optional)
@@ -93,7 +91,6 @@
 
         <div class="row">
           <button type="submit" id="search-btn">Suchen</button>
-          <span class="muted">Tipp: Import vorher ausführen, sonst ist die DB leer.</span>
         </div>
       </form>
     </aside>
@@ -135,16 +132,30 @@
         err[key].textContent = message || "";
       }
 
-      function numOrNull(input) {
+      function numOrNull(input, allowCommaDecimal = false) {
         const v = input.value.trim();
         if (v === "") return null;
-        const n = Number(v);
+        if (allowCommaDecimal && !/^-?\d+(?:[.,]\d+)?$/.test(v)) return NaN;
+        const normalized = allowCommaDecimal ? v.replace(",", ".") : v;
+        const n = Number(normalized);
         return Number.isFinite(n) ? n : NaN;
       }
 
+      function normalizeCommaDecimalForSubmit(input) {
+        input.value = input.value.trim().replace(",", ".");
+      }
+
+      function normalizeDisplayComma(input) {
+        input.value = input.value.trim().replace(".", ",");
+      }
+
+      function normalizeIntegerInput(input) {
+        input.value = input.value.replace(/\D+/g, "");
+      }
+
       function validate() {
-        const latV = numOrNull(lat);
-        const lonV = numOrNull(lon);
+        const latV = numOrNull(lat, true);
+        const lonV = numOrNull(lon, true);
         const radiusV = numOrNull(radius);
         const limitV = numOrNull(limit);
         const startV = numOrNull(startYear);
@@ -157,11 +168,11 @@
         setError(startYear, "start_year", "");
         setError(endYear, "end_year", "");
 
-        if (latV === null || Number.isNaN(latV)) setError(lat, "lat", "Bitte Latitude eingeben.");
-        else if (latV < -90 || latV > 90) setError(lat, "lat", "Latitude muss zwischen -90 und 90 liegen.");
+        if (latV === null || Number.isNaN(latV)) setError(lat, "lat", "Bitte Breitengrad eingeben (z. B. 48,062).");
+        else if (latV < -90 || latV > 90) setError(lat, "lat", "Breitengrad muss zwischen -90 und 90 liegen.");
 
-        if (lonV === null || Number.isNaN(lonV)) setError(lon, "lon", "Bitte Longitude eingeben.");
-        else if (lonV < -180 || lonV > 180) setError(lon, "lon", "Longitude muss zwischen -180 und 180 liegen.");
+        if (lonV === null || Number.isNaN(lonV)) setError(lon, "lon", "Bitte Längengrad eingeben (z. B. 8,493).");
+        else if (lonV < -180 || lonV > 180) setError(lon, "lon", "Längengrad muss zwischen -180 und 180 liegen.");
 
         if (radiusV === null || Number.isNaN(radiusV)) setError(radius, "radius_km", "Bitte Radius eingeben.");
         else if (!Number.isInteger(radiusV)) setError(radius, "radius_km", "Radius muss eine ganze Zahl sein.");
@@ -193,13 +204,24 @@
         el.addEventListener("input", validate);
         el.addEventListener("blur", validate);
       });
+      [radius, limit].forEach((el) => {
+        el.addEventListener("input", () => normalizeIntegerInput(el));
+        el.addEventListener("blur", () => normalizeIntegerInput(el));
+        el.addEventListener("paste", () => setTimeout(() => normalizeIntegerInput(el), 0));
+      });
+      [lat, lon].forEach((el) => {
+        el.addEventListener("blur", () => normalizeDisplayComma(el));
+      });
 
       form.addEventListener("submit", (e) => {
         validate();
         if (!form.checkValidity()) {
           e.preventDefault();
           form.reportValidity();
+          return;
         }
+        normalizeCommaDecimalForSubmit(lat);
+        normalizeCommaDecimalForSubmit(lon);
       });
 
       validate();
@@ -257,7 +279,7 @@
         const popup = `
           <div>
             <div style="font-weight:700">${escapeHtml(s.name)}</div>
-            <div style="color:#666;font-size:12px">${s.id} · ${Number(s.dist_km).toFixed(1)} km</div>
+            <div style="color:#666;font-size:12px">${s.id} · ${Number(s.dist_km).toFixed(1).replace(".", ",")} km</div>
             <div style="margin-top:6px"><a href="${url}">Station öffnen</a></div>
           </div>
         `;

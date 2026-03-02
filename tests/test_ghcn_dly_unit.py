@@ -51,20 +51,22 @@ def test_compute_means_assigns_djf_to_december_year(tmp_path: Path) -> None:
 
     series = compute_means(dly, start_year=2020, end_year=2021, elements={"TMIN", "TMAX"})
 
-    # Erwartung: 90 Tage in Winter 2020 (31 + 31 + 28).
+    # Erwartung mit Monatslogik:
+    # Winter 2020 = Mittel aus Dec 2020 (10.0), Jan 2021 (20.0), Feb 2021 (30.0)
     tmin_winter_2020 = series["tmin_winter"][0]
     assert tmin_winter_2020.year == 2020
-    assert tmin_winter_2020.present_days == 90
-    assert tmin_winter_2020.expected_days == 90
-    assert abs(tmin_winter_2020.value_c - (1770 / 90)) < 1e-6
+    assert tmin_winter_2020.present_months == 3
+    assert tmin_winter_2020.expected_months == 3
+    assert abs(tmin_winter_2020.value_c - 20.0) < 1e-6
 
     tmin_winter_2021 = series["tmin_winter"][1]
     assert tmin_winter_2021.value_c is None
-    assert tmin_winter_2021.present_days == 0
+    assert tmin_winter_2021.present_months == 0
 
-    # Jahresmittel wird aktuell aus verfügbaren Saisonmitteln gebildet.
+    # Jahresmittel 2020 basiert auf Monatsmitteln Jan..Dez 2020.
+    # In der Fixture gibt es nur Dez 2020, also entspricht der Jahreswert 10.0.
     tmin_year_2020 = series["tmin_year"][0]
-    assert abs(tmin_year_2020.value_c - tmin_winter_2020.value_c) < 1e-6
+    assert abs(tmin_year_2020.value_c - 10.0) < 1e-6
 
 
 def test_compute_means_missing_values_produce_none(tmp_path: Path) -> None:
@@ -81,5 +83,20 @@ def test_compute_means_missing_values_produce_none(tmp_path: Path) -> None:
 
     spring = series["tmin_spring"][0]
     assert spring.value_c is None
-    assert spring.present_days == 0
-    assert spring.expected_days == 92
+    assert spring.present_months == 0
+    assert spring.expected_months == 3
+
+
+def test_compute_means_year_uses_available_months_as_divisor(tmp_path: Path) -> None:
+    # Wenn ein Monat komplett fehlt, teilt das Jahresmittel durch die vorhandenen Monate.
+    dly = tmp_path / "station_year_divisor.dly"
+    lines = []
+    for month in range(1, 12):  # Jan..Nov vorhanden, Dez fehlt
+        lines.append(_build_line(2020, month, "TMIN", [100] * calendar.monthrange(2020, month)[1]))
+    _write_dly(dly, lines)
+
+    series = compute_means(dly, start_year=2020, end_year=2020, elements={"TMIN"})
+    year_point = series["tmin_year"][0]
+    assert year_point.value_c == 10.0
+    assert year_point.present_months == 11
+    assert year_point.expected_months == 12
