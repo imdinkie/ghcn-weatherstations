@@ -30,7 +30,7 @@ def _dly_dir() -> Path:
 
 
 def dly_url(station_id: str) -> str:
-    return f"https://noaa-ghcn-pds.s3.amazonaws.com/ghcnd_all/{station_id}.dly"
+    return f"https://www.ncei.noaa.gov/pub/data/ghcn/daily/all/{station_id}.dly"
 
 
 def ensure_station_dly(station_id: str) -> Path:
