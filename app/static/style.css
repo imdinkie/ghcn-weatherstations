@@ -68,6 +68,22 @@ button { padding: 8px 12px; }
   border-spacing: 0;
 }
 
+.table-wrap table.alt-columns tr > *:nth-child(odd) {
+  background: #ffffff;
+}
+
+.table-wrap table.alt-columns tr > *:nth-child(even) {
+  background: #f8fafc;
+}
+
+.table-wrap table.alt-columns thead tr > *:nth-child(odd) {
+  background: #f5f5f5;
+}
+
+.table-wrap table.alt-columns thead tr > *:nth-child(even) {
+  background: #eef2f7;
+}
+
 table { width: 100%; border-collapse: collapse; }
 th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
 th { background: #f5f5f5; }
@@ -93,7 +109,7 @@ th { background: #f5f5f5; }
 }
 
 .table-clickable tbody tr { cursor: pointer; }
-.table-clickable tbody tr:hover { background: #f8fafc; }
+.table-clickable tbody tr:hover > * { background: #eaf2ff; }
 .table-clickable tbody tr:focus { outline: 2px solid #2563eb; outline-offset: -2px; }
 
 .matrix {

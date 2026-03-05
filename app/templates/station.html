@@ -112,6 +112,7 @@
 
       const tableHead = document.querySelector("#table thead");
       const tableBody = document.querySelector("#table tbody");
+      const tableEl = document.getElementById("table");
       const allMetrics = [
         "tmin_year",
         "tmax_year",
@@ -347,6 +348,8 @@
       function renderTable() {
         const series = visibleSeries();
         const years = latestYears;
+        const visibleColumnCount = 1 + series.length;
+        tableEl.classList.toggle("alt-columns", visibleColumnCount >= 4);
         tableHead.innerHTML = "";
         tableBody.innerHTML = "";
 
