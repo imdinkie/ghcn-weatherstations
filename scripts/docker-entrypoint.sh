@@ -39,4 +39,14 @@ echo "Importing metadata into database"
 python scripts/import_metadata.py
 
 echo "Starting API server"
+if [ "${UVICORN_RELOAD:-0}" = "1" ] || [ "${UVICORN_RELOAD:-false}" = "true" ]; then
+  echo "Uvicorn reload mode enabled"
+  exec uvicorn app.main:app \
+    --host 0.0.0.0 \
+    --port "${APP_PORT:-8000}" \
+    --reload \
+    --reload-dir /app/app \
+    --reload-dir /app/scripts
+fi
+
 exec uvicorn app.main:app --host 0.0.0.0 --port "${APP_PORT:-8000}"

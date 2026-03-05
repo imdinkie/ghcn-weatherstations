@@ -1,0 +1,9 @@
+services:
+  app:
+    environment:
+      UVICORN_RELOAD: "1"
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ./app:/app/app
+      - ./scripts:/app/scripts
+      - ./data:/app/data

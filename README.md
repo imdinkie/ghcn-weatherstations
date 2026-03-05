@@ -18,6 +18,20 @@ Beim Start macht der App-Container automatisch:
 3. Metadaten in Postgres importieren
 4. FastAPI starten
 
+## Docker Hot Reload (Entwicklung)
+
+Für Entwicklung mit automatischem Reload bei Codeänderungen:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+```
+
+Hinweise:
+
+- Die App läuft weiterhin auf `http://localhost:8000`.
+- Änderungen in `app/` und `scripts/` werden im laufenden Container automatisch neu geladen.
+- Für den normalen Betrieb ohne Reload weiter nur `docker compose up --build` verwenden.
+
 ## Optional: Adminer (DB-UI)
 
 Adminer ist ein separates Debug-Tool für die Datenbank und läuft daher auf einem eigenen Port.
