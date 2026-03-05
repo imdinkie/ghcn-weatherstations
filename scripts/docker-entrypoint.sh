@@ -35,8 +35,30 @@ else
   echo "Metadata already present -> skip download"
 fi
 
-echo "Importing metadata into database"
-python scripts/import_metadata.py
+python - << 'PY'
+import os
+import psycopg
+
+dsn = os.environ["DATABASE_URL"]
+with psycopg.connect(dsn) as conn:
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM stations")
+        stations_count = int(cur.fetchone()[0] or 0)
+        cur.execute("SELECT count(*) FROM station_coverage")
+        coverage_count = int(cur.fetchone()[0] or 0)
+
+if stations_count > 0 and coverage_count > 0:
+    print(
+        f"Metadata already imported -> skip import "
+        f"(stations={stations_count}, coverage={coverage_count})"
+    )
+else:
+    print(
+        f"Metadata missing/incomplete -> import required "
+        f"(stations={stations_count}, coverage={coverage_count})"
+    )
+    os.execvp("python", ["python", "scripts/import_metadata.py"])
+PY
 
 echo "Starting API server"
 if [ "${UVICORN_RELOAD:-0}" = "1" ] || [ "${UVICORN_RELOAD:-false}" = "true" ]; then
