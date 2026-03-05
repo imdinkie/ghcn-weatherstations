@@ -16,7 +16,10 @@
       </p>
 
       <div class="card">
-        <div id="status" class="muted">Lade Daten…</div>
+        <div id="status" class="muted status-line" role="status" aria-live="polite">
+          <span id="status-spinner" class="spinner is-hidden" aria-hidden="true"></span>
+          <span id="status-text"></span>
+        </div>
         <canvas id="chart" height="140"></canvas>
       </div>
 
@@ -94,12 +97,15 @@
   <script>
     (function () {
       const stationId = "{{ station.id }}";
+      const stationLat = Number("{{ station.lat }}");
+      const isSouthernHemisphere = Number.isFinite(stationLat) && stationLat < 0;
       const maxYear = {{ max_year }};
 
       const startInput = document.getElementById("start_year");
       const endInput = document.getElementById("end_year");
       const loadBtn = document.getElementById("load");
-      const status = document.getElementById("status");
+      const statusText = document.getElementById("status-text");
+      const statusSpinner = document.getElementById("status-spinner");
       const metricEls = Array.from(document.querySelectorAll("input.metric"));
       const errStart = document.getElementById("err-start_year");
       const errEnd = document.getElementById("err-end_year");
@@ -208,16 +214,44 @@
         return map[key] || { borderColor: "#0f172a", backgroundColor: "rgba(15,23,42,0.1)" };
       }
 
+      function setStatus(message, isLoading = false) {
+        statusText.textContent = message || "";
+        statusSpinner.classList.toggle("is-hidden", !isLoading);
+      }
+
+      function sourceMetricKeyForDisplayKey(key) {
+        if (!isSouthernHemisphere) return key;
+        const match = /^(.+)_(spring|summer|autumn|winter)$/.exec(key);
+        if (!match) return key;
+        const seasonSwap = {
+          spring: "autumn",
+          summer: "winter",
+          autumn: "spring",
+          winter: "summer",
+        };
+        return `${match[1]}_${seasonSwap[match[2]]}`;
+      }
+
+      function remapSeriesForHemisphere(series) {
+        if (!isSouthernHemisphere) return series;
+        const byKey = new Map(series.map((s) => [s.key, s]));
+        return series.map((s) => {
+          const source = byKey.get(sourceMetricKeyForDisplayKey(s.key));
+          if (!source) return s;
+          return { ...s, points: source.points };
+        });
+      }
+
       async function load() {
         if (loading) return;
         if (selectedMetrics().length === 0) {
-          status.textContent = "Bitte mindestens eine Reihe auswählen.";
+          setStatus("Bitte mindestens eine Reihe auswählen.");
           validateYears();
           return;
         }
         validateYears();
         if (!startInput.checkValidity() || !endInput.checkValidity()) {
-          status.textContent = "Bitte Zeitraum korrigieren.";
+          setStatus("Bitte Zeitraum korrigieren.");
           return;
         }
 
@@ -227,7 +261,7 @@
         startInput.value = String(startYear);
         endInput.value = String(endYear);
 
-        status.textContent = "Lade Daten… (beim ersten Mal kann der Download etwas dauern)";
+        setStatus("Lade Daten… (beim ersten Mal kann der Download etwas dauern)", true);
         loadBtn.disabled = true;
         loading = true;
 
@@ -241,9 +275,9 @@
           }
           const data = await res.json();
           render(data.series, startYear, endYear);
-          status.textContent = "";
+          setStatus("");
         } catch (e) {
-          status.textContent = "Fehler beim Laden: " + (e && e.message ? e.message : String(e));
+          setStatus("Fehler beim Laden: " + (e && e.message ? e.message : String(e)));
         } finally {
           loading = false;
           loadBtn.disabled = false;
@@ -254,10 +288,10 @@
       function render(series, startYear, endYear) {
         const years = [];
         for (let y = startYear; y <= endYear; y++) years.push(y);
-        latestSeries = series;
+        latestSeries = remapSeriesForHemisphere(series);
         latestYears = years;
 
-        const datasets = series.map((s) => ({
+        const datasets = latestSeries.map((s) => ({
           label: metricLabel(s.key),
           data: s.points.map((p) => (p.value_c == null ? null : Number(Number(p.value_c).toFixed(1)))),
           hidden: !selectedMetrics().includes(s.key),
