@@ -48,7 +48,6 @@ button { padding: 8px 12px; }
   max-height: 60vh;
   min-height: 220px;
   scrollbar-gutter: stable both-edges;
-  overscroll-behavior: contain;
 }
 
 .card.table-wrap {
