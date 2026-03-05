@@ -38,8 +38,10 @@ fi
 python - << 'PY'
 import os
 import psycopg
+from app.db import ensure_schema
 
 dsn = os.environ["DATABASE_URL"]
+ensure_schema()
 with psycopg.connect(dsn) as conn:
     with conn.cursor() as cur:
         cur.execute("SELECT count(*) FROM stations")
