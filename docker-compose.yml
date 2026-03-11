@@ -32,7 +32,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-example}
       POSTGRES_DB: ${POSTGRES_DB:-weatherstations}
       DATABASE_URL: postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-example}@db:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-weatherstations}
-      APP_PORT: ${APP_PORT:-8000}
+      APP_PORT: 8000
       DATA_DIR: /app/data
     ports:
       - "${APP_PORT:-8000}:8000"

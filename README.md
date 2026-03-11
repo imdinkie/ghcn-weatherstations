@@ -31,6 +31,7 @@ Hinweise:
 - Die App läuft weiterhin auf `http://localhost:8000`.
 - Änderungen in `app/` und `scripts/` werden im laufenden Container automatisch neu geladen.
 - Für den normalen Betrieb ohne Reload weiter nur `docker compose up --build` verwenden.
+- Wenn Port `8000` auf dem Host belegt ist, kannst du z. B. mit `APP_PORT=8001 docker compose up --build` auf einen anderen Host-Port ausweichen.
 
 ## Optional: Adminer (DB-UI)
 
@@ -67,7 +68,7 @@ Beispiele für Override-Werte:
 - `POSTGRES_PASSWORD`
 - `POSTGRES_DB`
 - `POSTGRES_PORT`
-- `APP_PORT`
+- `APP_PORT` (nur Host-Port der App; der Container selbst lauscht intern immer auf `8000`)
 
 ## Lokale Entwicklung ohne App-Container
 
@@ -89,13 +90,18 @@ DATABASE_URL=postgresql://user:example@localhost:5432/weatherstations
 
 ## Tests
 
+Die Test-Suite enthält Integrations-Tests gegen eine echte Postgres-DB.
+Vor `pytest` muss daher die Datenbank laufen, z. B. so:
+
 ```bash
+docker compose up -d db
 source .venv/bin/activate
 pytest
 ```
 
 - Unit-Tests: Parser/Mathematik/Fachlogik
 - Integrations-Tests: API gegen echte Postgres-DB
+- Erwartet `DATABASE_URL`, standardmäßig aus `.env` mit `localhost:5432`
 - Coverage: Terminal + `coverage.xml`
 
 ## CI
