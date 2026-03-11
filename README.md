@@ -1,6 +1,31 @@
 # GHCN Weatherstations
 
-## Schnellstart (One-command)
+## Schnellstart (Empfohlen: Release-Compose mit GHCR-Image)
+
+Veröffentlichtes App-Image direkt per Compose starten:
+
+```bash
+docker compose -f docker-compose.release.yml up -d
+```
+
+Danach erreichbar unter:
+
+- App: `http://localhost:8000`
+- API Docs: `http://localhost:8000/docs`
+
+Hinweise:
+
+- Beim ersten Start zieht Compose das veröffentlichte App-Image aus GHCR.
+- Beim ersten Start lädt die App Metadaten und importiert sie in Postgres.
+- Der erste Start kann deshalb deutlich länger dauern als Folge-Starts.
+
+Stoppen und aufräumen:
+
+```bash
+docker compose -f docker-compose.release.yml down -v
+```
+
+## Alternative: Lokaler Build per Compose
 
 ```bash
 docker compose up --build
@@ -17,6 +42,31 @@ Beim Start macht der App-Container automatisch:
 2. Metadaten laden (falls `data/stations.txt` oder `data/inventory.txt` fehlen)
 3. Metadaten in Postgres importieren
 4. FastAPI starten
+
+## Manuelle Alternative ohne Compose
+
+Falls der Release-Weg ohne Compose benötigt wird, kann das veröffentlichte Image auch manuell gestartet werden:
+
+```bash
+docker network create ghcn-weatherstations-net
+docker run -d --name ghcn-weatherstations-db \
+  --network ghcn-weatherstations-net \
+  -e POSTGRES_USER=user \
+  -e POSTGRES_PASSWORD=example \
+  -e POSTGRES_DB=weatherstations \
+  postgres:16
+docker run -d --name ghcn-weatherstations-app \
+  --network ghcn-weatherstations-net \
+  -p 8000:8000 \
+  -e POSTGRES_HOST=ghcn-weatherstations-db \
+  -e POSTGRES_PORT=5432 \
+  -e POSTGRES_USER=user \
+  -e POSTGRES_PASSWORD=example \
+  -e POSTGRES_DB=weatherstations \
+  -e DATABASE_URL=postgresql://user:example@ghcn-weatherstations-db:5432/weatherstations \
+  -e APP_PORT=8000 \
+  ghcr.io/imdinkie/ghcn-weatherstations:latest
+```
 
 ## Docker Hot Reload (Entwicklung)
 
