@@ -112,7 +112,22 @@ Workflow: `.github/workflows/ci.yml`
 - installiert Dependencies
 - führt `pytest` mit Coverage aus
 - führt einen Container-Smoke-Test (`docker compose up` + `/health`) aus
+- veröffentlicht bei Push auf `master` ein Container-Image nach `ghcr.io/imdinkie/ghcn-weatherstations`
 - lädt `coverage.xml` als Artefakt hoch
+
+## Container Image
+
+Bei erfolgreichen Pushes auf `master` wird das App-Image automatisch nach GHCR veröffentlicht:
+
+- `ghcr.io/imdinkie/ghcn-weatherstations:latest`
+- `ghcr.io/imdinkie/ghcn-weatherstations:sha-<commit>`
+
+Beispiel:
+
+```bash
+docker pull ghcr.io/imdinkie/ghcn-weatherstations:latest
+docker run --rm -p 8000:8000 ghcr.io/imdinkie/ghcn-weatherstations:latest
+```
 
 ## Lighthouse (manuell)
 
